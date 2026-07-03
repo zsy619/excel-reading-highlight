@@ -1,0 +1,118 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1783069641688,
+  "projectRoot": "/Users/zhushuyan/Documents/officeAddIn/excel-reading-highlight",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "webpack",
+        "version": "5.105.0",
+        "category": "build"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": null,
+    "lintCommand": "npm run lint",
+    "devCommand": "npm run start",
+    "scripts": {
+      "build": "webpack --mode production",
+      "build:dev": "webpack --mode development",
+      "dev-server": "webpack serve --mode development",
+      "lint": "office-addin-lint check",
+      "lint:fix": "office-addin-lint fix",
+      "prettier": "office-addin-lint prettier",
+      "signin": "office-addin-dev-settings m365-account login",
+      "signout": "office-addin-dev-settings m365-account logout",
+      "start": "office-addin-debugging start manifest.xml",
+      "stop": "office-addin-debugging stop manifest.xml",
+      "validate": "office-addin-manifest validate manifest.xml",
+      "watch": "webpack --mode development --watch"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "assets",
+      "src"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "assets": {
+      "path": "assets",
+      "purpose": "Static assets",
+      "fileCount": 6,
+      "lastAccessed": 1783069641604,
+      "keyFiles": [
+        "icon-128.png",
+        "icon-16.png",
+        "icon-32.png",
+        "icon-64.png",
+        "icon-80.png"
+      ]
+    },
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 12,
+      "lastAccessed": 1783069641604,
+      "keyFiles": [
+        "5a365c44a47e90ea4615.css",
+        "commands.html",
+        "commands.js",
+        "commands.js.LICENSE.txt",
+        "commands.js.map"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1783069641607,
+      "keyFiles": []
+    },
+    "dist/assets": {
+      "path": "dist/assets",
+      "purpose": "Static assets",
+      "fileCount": 6,
+      "lastAccessed": 1783069641608,
+      "keyFiles": [
+        "icon-128.png",
+        "icon-16.png",
+        "icon-32.png"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}
