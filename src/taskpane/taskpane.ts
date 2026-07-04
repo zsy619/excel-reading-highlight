@@ -55,6 +55,10 @@ Office.onReady((info) => {
     const autoToggle = urlParams.get("autoToggle") !== null;
     initUI();
     if (autoToggle) onToggleClick();
+
+    if (currentState.enabled) {
+      void controller.applyCurrentSelection();
+    }
   }
 });
 

@@ -33,7 +33,7 @@
   },
   "build": {
     "buildCommand": "npm run build",
-    "testCommand": null,
+    "testCommand": "rtk vitest 2>&1 | tail -80",
     "lintCommand": "npm run lint",
     "devCommand": "npm run start",
     "scripts": {
@@ -116,14 +116,14 @@
   "hotPaths": [
     {
       "path": "src/commands/commands.ts",
-      "accessCount": 2,
-      "lastAccessed": 1783126945651,
+      "accessCount": 3,
+      "lastAccessed": 1783144497887,
       "type": "file"
     },
     {
       "path": "src/taskpane/taskpane.html",
-      "accessCount": 2,
-      "lastAccessed": 1783126950011,
+      "accessCount": 3,
+      "lastAccessed": 1783144514022,
       "type": "file"
     },
     {
@@ -145,15 +145,15 @@
       "type": "file"
     },
     {
-      "path": "src/taskpane/components/ReadingMode.ts",
-      "accessCount": 1,
-      "lastAccessed": 1783126873999,
+      "path": "src/shared/ReadingModeCore.ts",
+      "accessCount": 2,
+      "lastAccessed": 1783144640965,
       "type": "file"
     },
     {
-      "path": "src/shared/ReadingModeCore.ts",
+      "path": "src/taskpane/components/ReadingMode.ts",
       "accessCount": 1,
-      "lastAccessed": 1783126900956,
+      "lastAccessed": 1783126873999,
       "type": "file"
     },
     {
@@ -196,6 +196,36 @@
       "path": "manifest.xml",
       "accessCount": 1,
       "lastAccessed": 1783126983672,
+      "type": "file"
+    },
+    {
+      "path": "src/taskpane/taskpane.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783144486570,
+      "type": "file"
+    },
+    {
+      "path": "src/commands/commands.excel.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783144503178,
+      "type": "file"
+    },
+    {
+      "path": "src/commands/controller.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783144714165,
+      "type": "file"
+    },
+    {
+      "path": "src/shared/ReadingModeCore.test.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783144815707,
+      "type": "file"
+    },
+    {
+      "path": "src/commands/controller.test.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783144820423,
       "type": "file"
     }
   ],

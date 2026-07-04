@@ -11,3 +11,58 @@ coverage
 .vscode/settings.json
 .idea
 .husky
+# 依赖目录（必须排除）
+node_modules/
+
+# 日志文件
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# 运行时/环境变量文件
+.env
+.env.local
+.env.*.local
+
+# 包管理器的锁文件（仅在使用 yarn 或 pnpm 时可排除，npm 建议保留）
+# 如果你使用 npm，请提交 package-lock.json，不要排除它！
+# yarn.lock
+# pnpm-lock.yaml
+
+# 构建输出
+dist/
+build/
+out/
+
+# 测试覆盖率
+coverage/
+.nyc_output/
+
+# 缓存目录
+.cache/
+.turbo/
+.parcel-cache/
+.next/
+.nuxt/
+.vuepress/dist/
+
+# IDE 和编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 操作系统文件
+Thumbs.db
+desktop.ini
+
+# TypeScript 编译缓存（可选）
+*.tsbuildinfo
+
+# 临时文件
+tmp/
+temp/
