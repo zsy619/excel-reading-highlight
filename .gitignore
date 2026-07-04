@@ -1,6 +1,7 @@
 node_modules
 dist
 .omc
+.omo
 lib
 lib-amd
 coverage
