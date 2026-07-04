@@ -19,7 +19,7 @@
 <body class="ms-font-m ms-welcome ms-Fabric">
     <main id="app-body" class="ms-welcome__main">
         <h2 class="ms-font-xl reading-header">阅读模式</h2>
-        <p class="ms-font-s description">选中单元格时自动高亮所在行和列的表头</p>
+        <p class="ms-font-s description">选中单元格时自动高亮所在整行、整列与当前单元格</p>
 
         <!-- 开关 -->
         <div class="toggle-row">
@@ -34,7 +34,7 @@
             <h3 class="ms-font-s section-title">颜色设置</h3>
 
             <div class="color-row">
-                <label class="ms-font-s color-label" for="row-color">行表头颜色</label>
+                <label class="ms-font-s color-label" for="row-color">行/列高亮颜色</label>
                 <div class="color-picker-wrapper">
                     <input type="color" id="row-color" class="color-picker" value="#E3F2FD" />
                     <span class="color-hex" id="row-color-hex">#E3F2FD</span>
@@ -42,10 +42,10 @@
             </div>
 
             <div class="color-row">
-                <label class="ms-font-s color-label" for="column-color">列表头颜色</label>
+                <label class="ms-font-s color-label" for="column-color">当前单元格颜色</label>
                 <div class="color-picker-wrapper">
-                    <input type="color" id="column-color" class="color-picker" value="#E8F5E9" />
-                    <span class="color-hex" id="column-color-hex">#E8F5E9</span>
+                    <input type="color" id="column-color" class="color-picker" value="#FFF3B0" />
+                    <span class="color-hex" id="column-color-hex">#FFF3B0</span>
                 </div>
             </div>
         </div>

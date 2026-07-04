@@ -1,0 +1,13 @@
+<!-- Ribbon "高亮设置" 按钮图标(80×80 viewBox)
+     调色板形状 + 4 个色点(用 logo 配色:蓝/黄/绿/红)
+     跟 logo/toggle 同色系,保持统一视觉语言 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
+  <!-- 调色板轮廓(蓝边白底) -->
+  <path d="M 40 8 C 22 8, 8 22, 8 40 C 8 54, 18 66, 30 70 C 38 72, 38 64, 36 60 C 34 56, 38 50, 44 50 L 56 50 C 66 50, 72 44, 72 36 C 72 20, 56 8, 40 8 Z"
+        fill="#FFFFFF" stroke="#1976D2" stroke-width="5" stroke-linejoin="round"/>
+  <!-- 颜料点:跟 logo 同色系 -->
+  <circle cx="22" cy="28" r="5" fill="#90CAF9" stroke="#1976D2" stroke-width="2"/>
+  <circle cx="34" cy="20" r="5" fill="#FFD54F" stroke="#F57C00" stroke-width="2"/>
+  <circle cx="50" cy="20" r="5" fill="#81C784" stroke="#388E3C" stroke-width="2"/>
+  <circle cx="60" cy="32" r="5" fill="#EF9A9A" stroke="#C62828" stroke-width="2"/>
+</svg>

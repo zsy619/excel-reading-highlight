@@ -1,0 +1,13 @@
+<!-- 阅读模式高亮 logo 主稿(80×80 viewBox)
+     统一视觉语言:圆角白色卡片 + 浅蓝十字 + 黄色高亮选中格
+     用于 OfficeApp 图标(16/32/64) + Ribbon Group 图标(16/32/80) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
+  <!-- 卡片底(蓝边白底) -->
+  <rect x="6" y="6" width="68" height="68" rx="10" fill="#FFFFFF" stroke="#1976D2" stroke-width="5"/>
+  <!-- 行高亮条(浅蓝) -->
+  <rect x="6" y="32" width="68" height="16" fill="#90CAF9"/>
+  <!-- 列高亮条(浅蓝) -->
+  <rect x="32" y="6" width="16" height="68" fill="#90CAF9"/>
+  <!-- 选中单元格(黄底橙边) -->
+  <rect x="30" y="30" width="20" height="20" rx="2" fill="#FFD54F" stroke="#F57C00" stroke-width="3"/>
+</svg>

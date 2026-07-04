@@ -6,8 +6,8 @@
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="阅读模式高亮"/>
   <Description DefaultValue="类似 WPS 阅读模式的 Excel 行列高亮插件"/>
-  <IconUrl DefaultValue="https://www.contoso.com/assets/icon-32.png"/>
-  <HighResolutionIconUrl DefaultValue="https://www.contoso.com/assets/icon-64.png"/>
+  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
   <SupportUrl DefaultValue="https://www.contoso.com/help"/>
   <AppDomains>
     <AppDomain>https://www.contoso.com</AppDomain>
@@ -16,7 +16,7 @@
     <Host Name="Workbook"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://www.contoso.com/taskpane.html"/>
+    <SourceLocation DefaultValue="https://localhost:3000/taskpane.html"/>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -39,6 +39,7 @@
                   <bt:Image size="32" resid="Icon.32x32"/>
                   <bt:Image size="80" resid="Icon.80x80"/>
                 </Icon>
+                <!-- 切换高亮:ExecuteFunction,直接切换阅读模式开关,不再开任务窗格 -->
                 <Control xsi:type="Button" id="ToggleReadingModeButton">
                   <Label resid="ToggleReadingModeButton.Label"/>
                   <Supertip>
@@ -46,15 +47,15 @@
                     <Description resid="ToggleReadingModeButton.Tooltip"/>
                   </Supertip>
                   <Icon>
-                    <bt:Image size="16" resid="Icon.16x16"/>
-                    <bt:Image size="32" resid="Icon.32x32"/>
-                    <bt:Image size="80" resid="Icon.80x80"/>
+                    <bt:Image size="16" resid="Toggle.16x16"/>
+                    <bt:Image size="32" resid="Toggle.32x32"/>
+                    <bt:Image size="80" resid="Toggle.80x80"/>
                   </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ReadingModeToggle</TaskpaneId>
-                    <SourceLocation resid="ToggleTaskpane.Url"/>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>toggleReadingMode</FunctionName>
                   </Action>
                 </Control>
+                <!-- 高亮设置:打开任务窗格调整颜色 -->
                 <Control xsi:type="Button" id="SettingsTaskpaneButton">
                   <Label resid="SettingsTaskpaneButton.Label"/>
                   <Supertip>
@@ -62,9 +63,9 @@
                     <Description resid="SettingsTaskpaneButton.Tooltip"/>
                   </Supertip>
                   <Icon>
-                    <bt:Image size="16" resid="Icon.16x16"/>
-                    <bt:Image size="32" resid="Icon.32x32"/>
-                    <bt:Image size="80" resid="Icon.80x80"/>
+                    <bt:Image size="16" resid="Settings.16x16"/>
+                    <bt:Image size="32" resid="Settings.32x32"/>
+                    <bt:Image size="80" resid="Settings.80x80"/>
                   </Icon>
                   <Action xsi:type="ShowTaskpane">
                     <TaskpaneId>ReadingModeSettings</TaskpaneId>
@@ -79,15 +80,23 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://www.contoso.com/assets/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://www.contoso.com/assets/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://www.contoso.com/assets/icon-80.png"/>
+        <!-- 品牌 logo:用于 OfficeApp + Ribbon Group -->
+        <bt:Image id="Icon.16x16" DefaultValue="https://localhost:3000/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://localhost:3000/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://localhost:3000/assets/icon-80.png"/>
+        <!-- 切换高亮按钮:logo + 绿色对勾 -->
+        <bt:Image id="Toggle.16x16" DefaultValue="https://localhost:3000/assets/toggle-16.png"/>
+        <bt:Image id="Toggle.32x32" DefaultValue="https://localhost:3000/assets/toggle-32.png"/>
+        <bt:Image id="Toggle.80x80" DefaultValue="https://localhost:3000/assets/toggle-80.png"/>
+        <!-- 高亮设置按钮:调色板 -->
+        <bt:Image id="Settings.16x16" DefaultValue="https://localhost:3000/assets/settings-16.png"/>
+        <bt:Image id="Settings.32x32" DefaultValue="https://localhost:3000/assets/settings-32.png"/>
+        <bt:Image id="Settings.80x80" DefaultValue="https://localhost:3000/assets/settings-80.png"/>
       </bt:Images>
       <bt:Urls>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812"/>
-        <bt:Url id="Commands.Url" DefaultValue="https://www.contoso.com/commands.html"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://www.contoso.com/taskpane.html"/>
-        <bt:Url id="ToggleTaskpane.Url" DefaultValue="https://www.contoso.com/taskpane.html?autoToggle"/>
+        <bt:Url id="Commands.Url" DefaultValue="https://localhost:3000/commands.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="CustomTab.Label" DefaultValue="阅读模式"/>
@@ -97,9 +106,9 @@
         <bt:String id="SettingsTaskpaneButton.Label" DefaultValue="高亮设置"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="GetStarted.Description" DefaultValue="阅读模式高亮加载成功。点击「阅读模式」标签页的「切换高亮」按钮开始使用。"/>
-        <bt:String id="ToggleReadingModeButton.Tooltip" DefaultValue="开启/关闭阅读模式行列高亮"/>
-        <bt:String id="SettingsTaskpaneButton.Tooltip" DefaultValue="打开任务窗格调整高亮颜色等设置"/>
+        <bt:String id="GetStarted.Description" DefaultValue="阅读模式高亮加载成功。点击「阅读模式」标签页的「切换高亮」按钮启用,「高亮设置」按钮调整颜色。"/>
+        <bt:String id="ToggleReadingModeButton.Tooltip" DefaultValue="开关阅读模式:选中单元格时高亮所在整行、整列与当前单元格"/>
+        <bt:String id="SettingsTaskpaneButton.Tooltip" DefaultValue="打开任务窗格调整高亮颜色"/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

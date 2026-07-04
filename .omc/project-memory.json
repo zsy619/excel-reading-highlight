@@ -113,6 +113,91 @@
       ]
     }
   },
-  "hotPaths": [],
+  "hotPaths": [
+    {
+      "path": "src/commands/commands.ts",
+      "accessCount": 2,
+      "lastAccessed": 1783126945651,
+      "type": "file"
+    },
+    {
+      "path": "src/taskpane/taskpane.html",
+      "accessCount": 2,
+      "lastAccessed": 1783126950011,
+      "type": "file"
+    },
+    {
+      "path": "assets/logo.svg",
+      "accessCount": 2,
+      "lastAccessed": 1783126952315,
+      "type": "file"
+    },
+    {
+      "path": "assets/toggle.svg",
+      "accessCount": 2,
+      "lastAccessed": 1783126954535,
+      "type": "file"
+    },
+    {
+      "path": "assets/settings.svg",
+      "accessCount": 2,
+      "lastAccessed": 1783126957207,
+      "type": "file"
+    },
+    {
+      "path": "src/taskpane/components/ReadingMode.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783126873999,
+      "type": "file"
+    },
+    {
+      "path": "src/shared/ReadingModeCore.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783126900956,
+      "type": "file"
+    },
+    {
+      "path": "assets/toggle-80.png",
+      "accessCount": 1,
+      "lastAccessed": 1783126964638,
+      "type": "file"
+    },
+    {
+      "path": "assets/icon-80.png",
+      "accessCount": 1,
+      "lastAccessed": 1783126964659,
+      "type": "file"
+    },
+    {
+      "path": "assets/icon-16.png",
+      "accessCount": 1,
+      "lastAccessed": 1783126965151,
+      "type": "file"
+    },
+    {
+      "path": "assets/settings-80.png",
+      "accessCount": 1,
+      "lastAccessed": 1783126965181,
+      "type": "file"
+    },
+    {
+      "path": "assets/settings-16.png",
+      "accessCount": 1,
+      "lastAccessed": 1783126965628,
+      "type": "file"
+    },
+    {
+      "path": "assets/toggle-16.png",
+      "accessCount": 1,
+      "lastAccessed": 1783126965679,
+      "type": "file"
+    },
+    {
+      "path": "manifest.xml",
+      "accessCount": 1,
+      "lastAccessed": 1783126983672,
+      "type": "file"
+    }
+  ],
   "userDirectives": []
 }

@@ -1,0 +1,14 @@
+<!-- Ribbon "切换高亮" 按钮图标(80×80 viewBox)
+     在 logo 主稿基础上把"选中单元格"变成绿色 + 白色对勾,语义=已激活
+     强调这是"打开/关闭"动作,跟 logo 区分开 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
+  <!-- 卡片底(蓝边白底) -->
+  <rect x="6" y="6" width="68" height="68" rx="10" fill="#FFFFFF" stroke="#1976D2" stroke-width="5"/>
+  <!-- 行高亮条(浅蓝) -->
+  <rect x="6" y="32" width="68" height="16" fill="#90CAF9"/>
+  <!-- 列高亮条(浅蓝) -->
+  <rect x="32" y="6" width="16" height="68" fill="#90CAF9"/>
+  <!-- 选中单元格:绿色 + 白色对勾(代表"已激活"状态) -->
+  <rect x="30" y="30" width="20" height="20" rx="2" fill="#66BB6A" stroke="#2E7D32" stroke-width="3"/>
+  <path d="M 35 40 L 39 44 L 46 36" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

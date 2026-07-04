@@ -1,12 +1,14 @@
 /*
- * Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT license.
- * See LICENSE in the project root for license information.
+ * commands.ts — Ribbon ExecuteFunction 入口
+ *
+ * 唯一注册:FunctionName="toggleReadingMode" → commands.excel.ts 里的实现。
+ * 切换阅读模式时不需要打开任务窗格,所以走 ExecuteFunction 而不是 ShowTaskpane。
  */
+
+import { toggleReadingMode } from "./commands.excel";
 
 /* global Office */
 
-// Reserved for future ExecuteFunction commands.
-// Currently all Ribbon buttons use ShowTaskpane actions.
-Office.onReady(async () => {
-  // No commands to register
+Office.onReady(() => {
+  Office.actions.associate("toggleReadingMode", () => toggleReadingMode());
 });
