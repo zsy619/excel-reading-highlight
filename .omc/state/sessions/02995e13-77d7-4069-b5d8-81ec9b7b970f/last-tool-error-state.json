@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd /Users/zhushuyan/Documents/officeAddIn/deepseek-excel-assistant\\n\\necho \\\"=== 1. 看当前 manifest.xml 的 SourceLocation ===\\\"\\ngrep -A1 -B1 'SourceLocation\\\\|IconUrl\\\\|HighResolutionIconUrl'...",
-  "error": "Exit code 1\n=== 1. 看当前 manifest.xml 的 SourceLocation ===\n  <!-- Required icon files - sized for Office ribbon & marketplace -->\n  <IconUrl DefaultValue=\"https://127.0.0.1:3000/assets/icon-64.png\" />\n  <HighResolutionIconUrl DefaultValue=\"https://127.0.0.1:3000/assets/icon-128.png\" />\n  <SupportUrl DefaultValue=\"https://github.com/example/deepseek-excel-assistant/issues\" />\n--\n  <DefaultSettings>\n    <SourceLocation DefaultValue=\"https://127.0.0.1:3000/taskpane.html\" />\n  </DefaultSettings>\n--\n  ...",
-  "timestamp": "2026-07-03T09:08:36.771Z",
-  "retry_count": 1
-}
