@@ -157,6 +157,10 @@ class ReadingModeController {
     //      已经 reload 过,这里再 reload 一次是冗余但安全
     this._state = loadState();
     if (!this._state.enabled) return;
+    // 顺带注册 selection handler — taskpane 单开路径(this method 被直接调)
+    // 不会经过 _enable() / storage 事件,handler 必须在这里挂上,
+    // 否则后续点其他格 DocumentSelectionChanged 没人接,高亮不跟随
+    this._registerHandler();
     await this._doHighlight();
   }
 

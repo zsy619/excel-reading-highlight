@@ -327,4 +327,43 @@ describe("ReadingModeController", () => {
     // 走了 _doHighlight(phase 1 + phase 2 共 2 次 Excel.run)
     expect(h.excelRunCalls).toBeGreaterThan(0);
   });
+
+  // ── 7. P5 续修:applyCurrentSelection 顺带注册 selection handler ──
+  // taskpane-only 路径不会经过 _enable() / storage 事件,handler 永远挂不上,
+  // 后续点其他格 DocumentSelectionChanged 没人接 → 高亮不跟随
+  it("applyCurrentSelection: enabled=true 走 _doHighlight 同时挂上 selection handler", async () => {
+    await setControllerEnabled(false);
+    clearCounters();
+
+    // controller 是模块级单例,_registered flag 一旦 true 就不再调 addHandlerAsync
+    // (这是真实的 Office.js 行为,避免重复挂 handler)。前面测试已经让它 true 了,
+    // 这里重置成 false 来模拟"controller 第一次为 taskpane 服务"的场景
+    (controller as unknown as { _registered: boolean })._registered = false;
+
+    // 起点: 没注册过 handler
+    expect(h.selectionListeners.length).toBe(0);
+
+    // taskpane 写完 localStorage 后调 applyCurrentSelection
+    h.storage["readingMode.state"] = JSON.stringify({
+      enabled: true,
+      crossColor: "ff9300",
+      cellColor: "5a1c00",
+    });
+    await controller.applyCurrentSelection();
+
+    // handler 挂上了(toggle 没经过 _enable,所以只能靠 applyCurrentSelection 注册)
+    expect(h.selectionListeners.length).toBe(1);
+  });
+
+  it("applyCurrentSelection: enabled=false 短路,不挂 handler(也没必要挂)", async () => {
+    await setControllerEnabled(false);
+    clearCounters();
+    expect(h.selectionListeners.length).toBe(0);
+
+    // 已经是 disabled,reload 后还是 false,直接 return
+    await controller.applyCurrentSelection();
+
+    // 不挂 handler(没必要 — 反正 handler 内部 short-circuit 也不会做事)
+    expect(h.selectionListeners.length).toBe(0);
+  });
 });
