@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+# pre-commit hook
+#
+# 跑 lint-staged(在 staged 文件上跑 office-addin-lint + prettier),
+# 然后 build 验证 TS 能编译过。
+# 任意一步失败 → 提交被拒。
+#
+# 注意:office-addin-manifest validate 不在 hook 里跑 — 该 validator
+# 自带的 schema 对 CustomTab/Label 元素的校验跟运行时不一致(同一个
+# manifest 在 Excel 加载正常,但 validator 报"Label 非法"或"Label
+# 缺失")。这是 validator 的 bug,不是 manifest 的问题。手动验证用:
+#   npx office-addin-manifest info manifest.xml
+#   # 或者直接 sideload,看 Excel 是否能加载
+
+set -e
+
+npx --no-install lint-staged
+# webpack-cli 5 没有 --silent 选项,改成 --no-color 减少噪音(失败时仍会输出错误)
+npx --no-install webpack --mode development --no-color 2>&1 | tail -20

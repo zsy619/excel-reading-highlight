@@ -1,46 +1,63 @@
 /*
- * Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT license.
- * See LICENSE in the project root for license information.
+ * taskpane.ts - 任务窗格 UI(只负责显示 + 把用户操作写回 localStorage)
+ *
+ * 单一事实源在 commands.html 的 controller.ts。这里通过:
+ *   - localStorage 读状态、配色
+ *   - storage 事件听控制器状态变化(用于跨 sheet 后状态同步,虽然 taskpane 通常不感知)
+ *   - "readingMode.command" key 触发一次性命令(clearAll)
+ *
+ * 不再 import ReadingMode 类 - 控制器全权负责 Excel 操作。
  */
 
-/* global document Office */
+import { loadState, ReadingModeState, saveState } from "../shared/ReadingModeCore";
 
-import { ReadingMode, ReadingModeSettings } from "./components/ReadingMode";
+/* global document Office window localStorage setTimeout URLSearchParams HTMLInputElement HTMLButtonElement HTMLElement */
 
-// 全局单例
-const readingMode = new ReadingMode();
+/** 跟控制器通信的命令 key */
+const COMMAND_KEY = "readingMode.command";
 
-// DOM 元素引用
-let toggleSwitch: HTMLElement;
 let rowColorInput: HTMLInputElement;
 let columnColorInput: HTMLInputElement;
 let rowColorHex: HTMLElement;
 let columnColorHex: HTMLElement;
+let toggleSwitch: HTMLElement;
 let statusText: HTMLElement;
+
+let currentState: ReadingModeState = {
+  enabled: false,
+  crossColor: "E3F2FD",
+  cellColor: "FFF3B0",
+};
 
 Office.onReady((info) => {
   if (info.host === Office.HostType.Excel) {
-    // 检测是否通过"切换高亮"按钮打开（携带 ?autoToggle 参数）
     const urlParams = new URLSearchParams(window.location.search);
     const autoToggle = urlParams.get("autoToggle") !== null;
-
     initUI();
-
-    if (autoToggle) {
-      onToggleClick();
-    }
+    if (autoToggle) onToggleClick();
   }
 });
 
 function initUI(): void {
-  toggleSwitch = document.getElementById("toggle-reading")!;
+  currentState = loadState();
+
   rowColorInput = document.getElementById("row-color") as HTMLInputElement;
   columnColorInput = document.getElementById("column-color") as HTMLInputElement;
   rowColorHex = document.getElementById("row-color-hex")!;
   columnColorHex = document.getElementById("column-color-hex")!;
+  toggleSwitch = document.getElementById("toggle-reading")!;
   statusText = document.getElementById("status-text")!;
+  const clearAllBtn = document.getElementById("clear-all") as HTMLButtonElement | null;
 
-  // 开关点击
+  // 控件初值
+  rowColorInput.value = "#" + currentState.crossColor;
+  rowColorHex.textContent = "#" + currentState.crossColor;
+  columnColorInput.value = "#" + currentState.cellColor;
+  columnColorHex.textContent = "#" + currentState.cellColor;
+  updateUI(currentState.enabled);
+  setStatusText(currentState.enabled ? "状态: 已激活" : "状态: 未激活");
+
+  // 开关
   toggleSwitch.addEventListener("click", onToggleClick);
   toggleSwitch.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -49,35 +66,45 @@ function initUI(): void {
     }
   });
 
-  // 颜色变化
+  // 行/列色
   rowColorInput.addEventListener("input", () => {
     const color = rowColorInput.value;
     rowColorHex.textContent = color;
-    const decoded = hexToRgb(color);
-    readingMode.updateSettings({ rowColor: decoded });
+    currentState.crossColor = stripHash(color);
+    saveState(currentState); // storage 事件触发 controller 重涂
   });
-
   columnColorInput.addEventListener("input", () => {
     const color = columnColorInput.value;
     columnColorHex.textContent = color;
-    const decoded = hexToRgb(color);
-    readingMode.updateSettings({ columnColor: decoded });
+    currentState.cellColor = stripHash(color);
+    saveState(currentState);
   });
 
-  // 初始状态
-  updateUI(false);
+  // 全 sheet 清高亮
+  clearAllBtn?.addEventListener("click", () => {
+    invokeCommand("clearAll");
+    setStatusText("状态: 已清空所有高亮");
+  });
+
+  // 跨 context 状态同步 — 控制器侧 enabled 变化时,UI 跟着变
+  window.addEventListener("storage", (e) => {
+    if (e.key !== "readingMode.state") return;
+    currentState = loadState();
+    updateUI(currentState.enabled);
+    rowColorInput.value = "#" + currentState.crossColor;
+    rowColorHex.textContent = "#" + currentState.crossColor;
+    columnColorInput.value = "#" + currentState.cellColor;
+    columnColorHex.textContent = "#" + currentState.cellColor;
+    setStatusText(currentState.enabled ? "状态: 已激活" : "状态: 未激活");
+  });
 }
 
 async function onToggleClick(): Promise<void> {
-  if (!readingMode.enabled) {
-    await readingMode.enable();
-    updateUI(true);
-    setStatusText("状态: 已激活");
-  } else {
-    await readingMode.disable();
-    updateUI(false);
-    setStatusText("状态: 未激活");
-  }
+  const next = !currentState.enabled;
+  currentState.enabled = next;
+  saveState(currentState); // 控制器侧 storage listener 会调 toggle
+  updateUI(next);
+  setStatusText(next ? "状态: 已激活" : "状态: 未激活");
 }
 
 function updateUI(on: boolean): void {
@@ -88,7 +115,18 @@ function setStatusText(text: string): void {
   statusText.textContent = text;
 }
 
-/** #E3F2FD → "E3F2FD" (strip #) */
-function hexToRgb(hex: string): string {
-  return hex.replace("#", "");
+/** 通过 localStorage 触发一次命令(同 origin 的 commands.html context 会通过 storage 事件收到) */
+function invokeCommand(cmd: string): void {
+  // 用时间戳让每次都是新值,确保 storage 事件一定 fire
+  localStorage.setItem(COMMAND_KEY, JSON.stringify({ cmd, ts: Date.now() }));
+  // 50ms 后清掉,免得以后同值不 fire
+  setTimeout(() => {
+    if (localStorage.getItem(COMMAND_KEY) !== null) {
+      localStorage.removeItem(COMMAND_KEY);
+    }
+  }, 50);
+}
+
+function stripHash(hex: string): string {
+  return hex.startsWith("#") ? hex.slice(1) : hex;
 }

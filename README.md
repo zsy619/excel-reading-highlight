@@ -152,18 +152,25 @@ excel-reading-highlight/
 ├── tsconfig.json                 # TS 编译配置
 ├── webpack.config.js             # 构建配置（多入口：taskpane + commands）
 ├── babel.config.json             # Babel 配置（用于 TypeScript 转译）
-├── assets/                       # 图标资源（16/32/64/80/128）
+├── vitest.config.ts              # 单元测试配置
+├── .husky/pre-commit             # 提交前 lint + validate + build
+├── assets/                       # 图标资源（16/32/64/80，统一 SVG 风格）
+├── scripts/
+│   ├── clear-wef.js              # 清 Mac Excel WEF 缓存（npm run clear:wef）
+│   └── start.sh                  # 一键启动（npm run start:dev）
 └── src/
     ├── commands/
-    │   ├── commands.html         # Commands 入口 HTML
-    │   └── commands.ts           # Ribbon 按钮的 Action 实现
-    └── taskpane/
-        ├── taskpane.html         # 任务窗格 UI
-        ├── taskpane.css          # 任务窗格样式
-        ├── taskpane.ts           # 任务窗格入口 + UI 交互
-        ├── excel.ts              # Excel API 封装（预留）
-        └── components/
-            └── ReadingMode.ts    # 核心：高亮逻辑（单例）
+    │   ├── commands.html         # Commands 入口 HTML（Ribbon ExecuteFunction 运行环境）
+    │   ├── commands.ts           # Ribbon 按钮的 Action 注册 + 启动时 ensureEnabled
+    │   ├── commands.excel.ts     # toggleReadingMode/clearAll/ensureEnabled 薄包装
+    │   └── controller.ts         # 唯一控制器:状态 + 选区监听 + Excel 操作
+    ├── taskpane/
+    │   ├── taskpane.html         # 任务窗格 UI（开关 + 颜色选择器 + 全 sheet 清高亮）
+    │   ├── taskpane.css          # 任务窗格样式
+    │   └── taskpane.ts           # 任务窗格入口 + UI ↔ controller 桥接(localStorage)
+    └── shared/
+        ├── ReadingModeCore.ts    # 纯函数 + Excel 操作(被 controller 调用)
+        └── ReadingModeCore.test.ts # 纯函数单测(vitest)
 ```
 
 ### 6.3 构建配置要点
@@ -181,50 +188,58 @@ excel-reading-highlight/
 ```mermaid
 flowchart LR
     A[用户点击 Ribbon<br/>「切换高亮」] --> B[commands.ts<br/>toggleReadingMode]
-    B -- messageParent<br/>{type:TOGGLE_READING_MODE} --> C[taskpane.ts<br/>addHandlerAsync]
-    C --> D[ReadingMode.enable/disable]
-    D --> E[DocumentSelectionChanged<br/>事件监听]
-    E -- 节流 80ms --> F[_doHighlight]
-    F --> G[Excel.run<br/>getSelectedRange]
-    G --> H[填色 A 列 + 第 1 行]
-    H --> I[记录 lastHighlights]
+    B --> C[controller.ts<br/>唯一控制器]
+    C --> D[Excel.run<br/>getSelectedRange]
+    D --> E[applyHighlight]
+    E --> F[填整行 + 整列 + 当前格]
+    F --> G[记录 lastHighlights]
 
-    J[任务窗格 UI<br/>开关/颜色] --> D
-    J --> K[updateSettings]
-    K --> D
+    H[任务窗格 UI<br/>开关/颜色] --> I[localStorage<br/>readingMode.state]
+    I -- storage 事件 --> C
+
+    J[用户切换选区] --> K[DocumentSelectionChanged]
+    K -- 节流 80ms --> C
 ```
 
 ### 7.2 Ribbon ↔ Taskpane 通信
 
-Office Add-in 中，Ribbon 上的按钮 Action 运行在独立的 `commands.html` 上下文（**没有 DOM、没有 UI**），任务窗格运行在 `taskpane.html` 上下文。二者通过 `Office.context.ui.messageParent` ↔ `Office.context.ui.addHandlerAsync(UIAppCommandNotification)` 通信：
+Office Add-in 中，Ribbon 上的按钮 Action 运行在独立的 `commands.html` 上下文（**没有 DOM、没有 UI**），任务窗格运行在 `taskpane.html` 上下文。两个 iframe 同源,通过 **localStorage + `storage` 事件** 单向同步:
 
-- **`commands.ts`**：发消息 `messageParent(JSON.stringify({type: "TOGGLE_READING_MODE"}))`。
-- **`taskpane.ts`**：监听 `UIAppCommandNotification`，解析 message 后调用 `onToggleClick`。
+- **taskpane 改色 / 开关**: `saveState()` 写入 `localStorage["readingMode.state"]`,controller 端的 storage listener 触发 `applyCurrentSelection()` 重涂。
+- **taskpane 触发命令**(如"全 sheet 清高亮"): 写 `localStorage["readingMode.command"] = {cmd:"clearAll",ts:...}`,controller 收到 storage 事件后执行对应方法,然后清掉 command key。
+- **controller → taskpane**: 状态变化时写同一份 `readingMode.state`,taskpane 的 storage listener 同步 UI(开关 aria-checked、颜色选择器 value、状态文案)。
 
-> ⚠️ 注意：Ribbon 命令中**不能直接调用 Excel.run**（commands.html 没有权限访问 workbook API），所以高亮逻辑全部放在 taskpane 里执行。
+> 这种"localStorage 作为单一事实源 + storage 事件做广播"的模式比 `messageParent` 简单,且不要求 taskpane 始终打开。
+>
+> ⚠️ **`messageParent` 不能再用** — 那是 `Office.context.ui.messageParent`,只对 **Dialog API**(对话框)有效,不是 iframe 之间通信的工具。taskpane ↔ commands.html 之间的所有通知一律走 `storage` 事件,不要被旧 Office Add-in 示例里的范式误导。
 
-### 7.3 ReadingMode 单例
+### 7.3 ReadingModeController 单例
 
-`ReadingMode` 在 `taskpane.ts` 顶部 `new ReadingMode()` 创建**全局单例**，避免多实例冲突：
+`controller` 在 `commands.ts` 入口创建**全局单例**(`export const controller = new ReadingModeController()`),在 commands.html 上下文常驻:
 
-- `_enabled`：当前是否激活
-- `_rowColor` / `_columnColor`：颜色配置
-- `_lastHighlights`：已高亮单元格地址列表（用于关闭/切换时精准清理）
-- `_lastSheetName`：记录上一次工作表名，切换工作表时清空旧记录
+- `_state.enabled` / `_state.crossColor` / `_state.cellColor`:从 `localStorage["readingMode.state"]` 加载,所有改动写回。
+- `_lastHighlights`:已高亮记录(`LastHighlight[]`),key 是 `sheetName`,**不删旧 sheet 条目**,跨 sheet 切换时只清旧 sheet 视觉 + 恢复新 sheet 存储(见 7.5)。
+- `_lastSheetName`:记录当前 sheet,用于检测 sheet 切换。
+- `_registered`:`DocumentSelectionChanged` handler 单例标志,避免重复注册。
+- `_pendingTimer`:80ms 节流的 pending 句柄,关闭模式时清掉。
 
 ### 7.4 节流策略
 
-`onSelectionChanged` 在用户拖选时可能 1ms 触发数次，直接执行 `Excel.run` 会非常卡。`_throttle(fn)` 做了两层处理：
+`onSelectionChanged` 在用户拖选时可能 1ms 触发数次,直接执行 `Excel.run` 会非常卡。`_throttle(fn)` 做了两层处理:
 
 - 如果距离上次调用 ≥ 80ms → **立即执行**。
-- 否则 → 设置 `setTimeout` 在 80ms 后执行，并清掉之前的 pending timer。
+- 否则 → 设置 `setTimeout` 在 80ms 后执行,并清掉之前的 pending timer。
 
 ### 7.5 工作表切换处理
 
-切换 sheet 时，`_doHighlight` 读取当前 worksheet 名称，与 `_lastSheetName` 对比：
+切换 sheet 时,`_doHighlight` 读取当前 worksheet 名称,与 `_lastSheetName` 对比:
 
-- 若不一致 → 清空 `_lastHighlights`（旧 sheet 的高亮地址已无效）。
-- 若一致 → 复用旧记录。
+- 若不一致 → **只清旧 sheet 的视觉**(不删 `_lastHighlights` 里的旧条目),然后:
+  - 如果新 sheet 在存储里有 lastHighlight → 直接恢复,不让当前选区覆盖
+  - 如果没有 → 走 phase2 读选区 + 算 plan + 涂新
+- 若一致 → 复用旧记录,直接走 phase2。
+
+这样**回到之前访问过的 sheet,之前高亮自动恢复**,不会被新的选区覆盖。
 
 ### 7.6 高亮清理
 
@@ -258,10 +273,12 @@ Office Add-in 中，Ribbon 上的按钮 Action 运行在独立的 `commands.html
 ## 9. 已知限制
 
 - ❌ **不支持 Office 2019 及以下永久版**：仅 Microsoft 365 / Office 2021+ 支持最新 Office.js API。
-- ❌ **不支持多区域高亮**：选中多单元格时不会高亮，自动清除旧高亮。
+- ❌ **不支持真多选区域**：选中 M×N（多行多列）时不涂,旧高亮保留;1×N 整行会涂该行,N×1 整列会涂该列(行为符合预期)。
+- ❌ **合并单元格高亮位置偏差**：插件基于 `getSelectedRange()` 返回的原始单元格地址涂色,合并单元格的视觉位置可能与高亮位置不一致(目前按设计文档:会在后续版本修)。
 - ❌ **不支持撤销合并**：高亮不属于用户的可撤销操作（不要用 Ctrl+Z 撤销插件高亮）。
 - ❌ **样式面板可能混淆**：点击到被高亮的单元格时，「填充色」会显示为插件设置的颜色，**不是用户原格式**。
 - ❌ **大型工作表性能**：超过 10000 行的表，切换 sheet 时清理操作可能短暂卡顿。
+- ⚠️ **`office-addin-manifest validate` 对 `CustomTab/Label` 报错**：该 validator 自带的 schema 对 `CustomTab` 子元素 `Label` 的校验自相矛盾(同一个 manifest 一会儿说"Label 非法",一会儿说"Label 缺失")。这是 validator 的 bug,不是 manifest 的问题——Excel 实际加载正常。pre-commit hook 因此**没有**跑 manifest 验证;改 manifest 后建议手动 `office-addin-debugging start manifest.xml` 加载一次确认。
 
 ---
 
@@ -271,4 +288,4 @@ Office Add-in 中，Ribbon 上的按钮 Action 运行在独立的 `commands.html
 
 ---
 
-> 💡 **二次开发提示**：核心逻辑全部在 [`ReadingMode.ts`](./src/taskpane/components/ReadingMode.ts) 一个文件里，扩展功能（例如：高亮整行/整列、支持多选、按条件高亮）主要修改这一个文件即可。
+> 💡 **二次开发提示**：核心逻辑全部在 [`controller.ts`](./src/commands/controller.ts) 一个文件里(常驻 commands.html context),扩展功能(例如:支持多选、按条件高亮、撤销集成)主要修改这一个文件即可。任务窗格只做 UI 桥接,核心 Excel 操作不会出现在那里。

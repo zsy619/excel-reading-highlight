@@ -1,4 +1,4 @@
-/* global Excel Office console */
+/* global Excel console localStorage */
 
 /**
  * ReadingModeCore — 阅读模式高亮的核心 Excel 操作 + 状态同步
@@ -8,7 +8,9 @@
  *   - commands (Ribbon ExecuteFunction):调 toggle() / apply / clear
  *
  * 状态走 localStorage(JSON 字符串),两个 context 都能读写。
- * 通知对方用 Office.context.ui.messageParent(payload)。
+ * 跨 context 通知走 window 'storage' 事件 — 不同 iframe 间的 localStorage
+ * 修改会触发同 origin 的 storage 事件,所以 taskpane 改色 / 触发命令都靠这个,
+ * 不要再用 Office.context.ui.messageParent(那是给 Dialog API 用的)。
  *
  * 重要:每个 Excel.run 内只做一次 sync,避免"清旧"和"涂新"在同一个 context 里
  *      排队错位(之前症状:点其他单元格旧的没清掉,且新颜色不生效)。
@@ -107,17 +109,36 @@ export function computeHighlightPlan(
   totalRows: number,
   totalCols: number
 ): HighlightPlan {
-  if (rowCount !== 1 || columnCount !== 1) {
-    return { sheetName, isMultiCell: true };
-  }
   const maxPaintRow = Math.min(totalRows + 20, 1000);
   const maxPaintCol = Math.min(totalCols + 5, 100);
+  const lastColLetter = colIndexToLetter(Math.max(0, maxPaintCol - 1));
+
+  // 全选整列(1×N):只涂列,不涂单元格
+  if (rowCount === 1 && columnCount > 1) {
+    const rowNum = rowIndex + 1;
+    const rowAddr = `A${rowNum}:${lastColLetter}${rowNum}`;
+    console.log(`[RM] plan: sheet=${sheetName} 整行 row=${rowAddr}`);
+    return { sheetName, rowAddr, isMultiCell: false };
+  }
+  // 全选整行(N×1):只涂行,不涂单元格
+  if (columnCount === 1 && rowCount > 1) {
+    const colLetter = colIndexToLetter(columnIndex);
+    const colAddr = `${colLetter}1:${colLetter}${maxPaintRow}`;
+    console.log(`[RM] plan: sheet=${sheetName} 整列 col=${colAddr}`);
+    return { sheetName, colAddr, isMultiCell: false };
+  }
+  // 真正的多选(M×N):跳过
+  if (rowCount > 1 && columnCount > 1) {
+    return { sheetName, isMultiCell: true };
+  }
+
+  // 1×1 单格:WPS 十字交叉
   const rowNum = rowIndex + 1;
   const colLetter = colIndexToLetter(columnIndex);
   const cellAddr = `${colLetter}${rowNum}`;
-  const rowAddr = `A${rowNum}:${colIndexToLetter(maxPaintCol - 1)}${rowNum}`;
+  const rowAddr = `A${rowNum}:${lastColLetter}${rowNum}`;
   const colAddr = `${colLetter}1:${colLetter}${maxPaintRow}`;
-  console.log(`[RM] plan: sheet=${sheetName} cell=${cellAddr} row=${rowAddr} col=${colAddr} cross=${"?"} cellC=${"?"}`);
+  console.log(`[RM] plan: sheet=${sheetName} cell=${cellAddr} row=${rowAddr} col=${colAddr}`);
   return { sheetName, cellAddr, rowAddr, colAddr, isMultiCell: false };
 }
 
@@ -144,7 +165,10 @@ export async function clearHighlights(
   hls: LastHighlight[]
 ): Promise<void> {
   if (hls.length === 0) return;
-  console.log(`[RM] clear: ${hls.length} entries`, hls.map(h => `${h.sheetName}/${h.cellAddr}`));
+  console.log(
+    `[RM] clear: ${hls.length} entries`,
+    hls.map((h) => `${h.sheetName}/${h.cellAddr}`)
+  );
   for (const hl of hls) {
     for (const addr of [hl.rowAddr, hl.colAddr, hl.cellAddr]) {
       if (!addr) continue;
@@ -172,18 +196,29 @@ export function applyHighlight(
     console.log(`[RM] apply: 多选/合并,跳过涂`);
     return;
   }
-  console.log(`[RM] apply: sheet=${plan.sheetName} crossColor=${state.crossColor} cellColor=${state.cellColor}`);
+  console.log(
+    `[RM] apply: sheet=${plan.sheetName} crossColor=${state.crossColor} cellColor=${state.cellColor}`
+  );
   if (plan.rowAddr) {
-    try { sheet.getRange(plan.rowAddr).format.fill.color = state.crossColor; }
-    catch (e) { console.warn(`[RM] apply: row ${plan.rowAddr} 失败`, e); }
+    try {
+      sheet.getRange(plan.rowAddr).format.fill.color = state.crossColor;
+    } catch (e) {
+      console.warn(`[RM] apply: row ${plan.rowAddr} 失败`, e);
+    }
   }
   if (plan.colAddr) {
-    try { sheet.getRange(plan.colAddr).format.fill.color = state.crossColor; }
-    catch (e) { console.warn(`[RM] apply: col ${plan.colAddr} 失败`, e); }
+    try {
+      sheet.getRange(plan.colAddr).format.fill.color = state.crossColor;
+    } catch (e) {
+      console.warn(`[RM] apply: col ${plan.colAddr} 失败`, e);
+    }
   }
   if (plan.cellAddr) {
-    try { sheet.getRange(plan.cellAddr).format.fill.color = state.cellColor; }
-    catch (e) { console.warn(`[RM] apply: cell ${plan.cellAddr} 失败`, e); }
+    try {
+      sheet.getRange(plan.cellAddr).format.fill.color = state.cellColor;
+    } catch (e) {
+      console.warn(`[RM] apply: cell ${plan.cellAddr} 失败`, e);
+    }
   }
 }
 
@@ -217,19 +252,6 @@ export async function clearAllAcrossSheets(hls: LastHighlight[]): Promise<void> 
     );
   });
   await Promise.all(tasks);
-}
-
-// ───────────────────── 通知 ─────────────────────
-
-export function notifyTaskpane(payload: Record<string, unknown>): void {
-  try {
-    const json = JSON.stringify(payload);
-    if (Office?.context?.ui?.messageParent) {
-      Office.context.ui.messageParent(json);
-    }
-  } catch (e) {
-    console.warn("[RM] notifyTaskpane 失败(可能 taskpane 未打开):", e);
-  }
 }
 
 // ───────────────────── helpers ─────────────────────
