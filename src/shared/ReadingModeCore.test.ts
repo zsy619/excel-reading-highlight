@@ -1,3 +1,4 @@
+/* global Excel */
 /**
  * ReadingModeCore 纯函数测试 — 不碰 Excel / Office API
  *
@@ -5,10 +6,19 @@
  *   - colIndexToLetter: 0/25/26/27/701 边界
  *   - stripHash: 带/不带 # 的两种输入
  *   - computeHighlightPlan: 1×1 / 1×N 整行 / N×1 整列 / M×N 真多选
+ *   - applyHighlight: color 必须带 # 前缀,pattern 必须是 Solid(防 Mac Excel
+ *     静默 set 但渲染丢弃)
  */
 
 import { describe, it, expect } from "vitest";
-import { colIndexToLetter, stripHash, computeHighlightPlan } from "./ReadingModeCore";
+import {
+  colIndexToLetter,
+  stripHash,
+  computeHighlightPlan,
+  applyHighlight,
+  HighlightPlan,
+  ReadingModeState,
+} from "./ReadingModeCore";
 
 describe("colIndexToLetter", () => {
   it("0 → A", () => expect(colIndexToLetter(0)).toBe("A"));
@@ -75,5 +85,124 @@ describe("computeHighlightPlan", () => {
     // maxPaintCol = min(200+5, 100) = 100 → colIndexToLetter(99) = CV
     const plan = computeHighlightPlan(0, 0, 1, 1, sheetName, 50, 200);
     expect(plan.rowAddr).toBe("A1:CV1");
+  });
+});
+
+// ─────────────── applyHighlight(Excel.js 交互) ───────────────
+// 关键防呆:color 必须带 # 前缀 + pattern 必须设 Solid。
+// 不带 # 或 pattern=None,某些 Excel.js 版本会 set 成功但 Excel 渲染时丢弃。
+
+describe("applyHighlight", () => {
+  // 每个 range 的 format.fill 对象带 setter,记录 set 的值
+  function makeRangeRecorder() {
+    const rec: { color: string; pattern: string } = { color: "", pattern: "" };
+    const fill = {
+      get color() {
+        return rec.color;
+      },
+      set color(v: string) {
+        rec.color = v;
+      },
+      get pattern() {
+        return rec.pattern;
+      },
+      set pattern(v: string) {
+        rec.pattern = v;
+      },
+    };
+    return {
+      format: { fill },
+      _rec: rec,
+    };
+  }
+
+  function makeSheetMock() {
+    const ranges = new Map<string, ReturnType<typeof makeRangeRecorder>>();
+    return {
+      getRange: (addr: string) => {
+        if (!ranges.has(addr)) ranges.set(addr, makeRangeRecorder());
+        return ranges.get(addr)!;
+      },
+      _ranges: ranges,
+    };
+  }
+
+  it("1×1 plan: 三个 range 的 color 都带 # 前缀 + pattern=Solid", () => {
+    const sheet = makeSheetMock();
+    const ctx = {} as Excel.RequestContext;
+    const plan: HighlightPlan = {
+      sheetName: "Sheet1",
+      cellAddr: "K30",
+      rowAddr: "A30:AE30",
+      colAddr: "K1:K120",
+      isMultiCell: false,
+    };
+    const state: ReadingModeState = {
+      enabled: true,
+      crossColor: "ff9300",
+      cellColor: "5a1c00",
+    };
+    applyHighlight(ctx, sheet as unknown as Excel.Worksheet, plan, state);
+
+    // row 用 crossColor,带 # 前缀
+    expect(sheet._ranges.get("A30:AE30")!._rec.color).toBe("#ff9300");
+    expect(sheet._ranges.get("A30:AE30")!._rec.pattern).toBe("Solid");
+    // col 用 crossColor,带 # 前缀
+    expect(sheet._ranges.get("K1:K120")!._rec.color).toBe("#ff9300");
+    expect(sheet._ranges.get("K1:K120")!._rec.pattern).toBe("Solid");
+    // cell 用 cellColor,带 # 前缀
+    expect(sheet._ranges.get("K30")!._rec.color).toBe("#5a1c00");
+    expect(sheet._ranges.get("K30")!._rec.pattern).toBe("Solid");
+  });
+
+  it("整行 plan(只有 rowAddr): 只涂行,不涂 cell/col", () => {
+    const sheet = makeSheetMock();
+    const ctx = {} as Excel.RequestContext;
+    const plan: HighlightPlan = {
+      sheetName: "Sheet1",
+      rowAddr: "A5:AE5",
+      isMultiCell: false,
+    };
+    const state: ReadingModeState = { enabled: true, crossColor: "E3F2FD", cellColor: "FFF3B0" };
+    applyHighlight(ctx, sheet as unknown as Excel.Worksheet, plan, state);
+
+    expect(sheet._ranges.size).toBe(1);
+    expect(sheet._ranges.get("A5:AE5")!._rec.color).toBe("#E3F2FD");
+    expect(sheet._ranges.get("A5:AE5")!._rec.pattern).toBe("Solid");
+  });
+
+  it("多选 plan(isMultiCell=true): 啥都不涂", () => {
+    const sheet = makeSheetMock();
+    const ctx = {} as Excel.RequestContext;
+    const plan: HighlightPlan = { sheetName: "Sheet1", isMultiCell: true };
+    const state: ReadingModeState = { enabled: true, crossColor: "ff9300", cellColor: "5a1c00" };
+    applyHighlight(ctx, sheet as unknown as Excel.Worksheet, plan, state);
+
+    // 没有任何 range 被访问
+    expect(sheet._ranges.size).toBe(0);
+  });
+
+  it("state 已经带 # 时(异常输入): 不会叠成 ##", () => {
+    // stripHash 应该在 loadState 时去掉 #,但万一调用方传了带 # 的,
+    // 不能给 Excel.js 喂 ##ff9300
+    const sheet = makeSheetMock();
+    const ctx = {} as Excel.RequestContext;
+    const plan: HighlightPlan = {
+      sheetName: "Sheet1",
+      cellAddr: "A1",
+      rowAddr: "A1:F1",
+      colAddr: "A1:A70",
+      isMultiCell: false,
+    };
+    const state: ReadingModeState = { enabled: true, crossColor: "#ff9300", cellColor: "#5a1c00" };
+    applyHighlight(ctx, sheet as unknown as Excel.Worksheet, plan, state);
+
+    // A1 是 cell,用 cellColor=#5a1c00(不是 crossColor)。要验证的是没有叠成 ##。
+    expect(sheet._ranges.get("A1")!._rec.color).toBe("#5a1c00");
+    expect(sheet._ranges.get("A1:F1")!._rec.color).toBe("#ff9300");
+    // 关键:任何 range 都不应该出现 ##
+    for (const r of sheet._ranges.values()) {
+      expect(r._rec.color).not.toContain("##");
+    }
   });
 });

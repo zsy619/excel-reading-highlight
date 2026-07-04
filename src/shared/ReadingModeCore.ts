@@ -185,6 +185,14 @@ export async function clearHighlights(
 
 /**
  * 涂新:必须在独立的 Excel.run 里调,确保之前的 clear 完全落地后再涂。
+ *
+ * **Color format**:state 里存的是无 `#` 的 6 位 hex(全项目 canonical),
+ * 但 Excel.js 在某些平台(尤其 Mac / 某些 Excel.js 版本)对不带 `#` 的
+ * 颜色字符串会 set 成功但 Excel 渲染时丢弃 — 看起来"调了但没涂上"。
+ * 所以这里统一加 `#` 再赋值,确保跨平台一致。
+ *
+ * **Fill pattern**:只 set color 不设 pattern,某些版本 pattern 留在 None,
+ * color 被忽略。一并设 Solid,Excel 才会真的渲染填色。
  */
 export function applyHighlight(
   context: Excel.RequestContext,
@@ -199,23 +207,35 @@ export function applyHighlight(
   console.log(
     `[RM] apply: sheet=${plan.sheetName} crossColor=${state.crossColor} cellColor=${state.cellColor}`
   );
+  // 统一 #RRGGBB 格式(state 应当是无 # canonical 形式,loadState 调 stripHash)。
+  // 防御性:万一调用方传了带 # 的,不叠成 ##(Excel.js 会把 ## 视为非法色)
+  const crossColorHex = state.crossColor.startsWith("#")
+    ? state.crossColor
+    : "#" + state.crossColor;
+  const cellColorHex = state.cellColor.startsWith("#") ? state.cellColor : "#" + state.cellColor;
   if (plan.rowAddr) {
     try {
-      sheet.getRange(plan.rowAddr).format.fill.color = state.crossColor;
+      const range = sheet.getRange(plan.rowAddr);
+      range.format.fill.color = crossColorHex;
+      range.format.fill.pattern = "Solid";
     } catch (e) {
       console.warn(`[RM] apply: row ${plan.rowAddr} 失败`, e);
     }
   }
   if (plan.colAddr) {
     try {
-      sheet.getRange(plan.colAddr).format.fill.color = state.crossColor;
+      const range = sheet.getRange(plan.colAddr);
+      range.format.fill.color = crossColorHex;
+      range.format.fill.pattern = "Solid";
     } catch (e) {
       console.warn(`[RM] apply: col ${plan.colAddr} 失败`, e);
     }
   }
   if (plan.cellAddr) {
     try {
-      sheet.getRange(plan.cellAddr).format.fill.color = state.cellColor;
+      const range = sheet.getRange(plan.cellAddr);
+      range.format.fill.color = cellColorHex;
+      range.format.fill.pattern = "Solid";
     } catch (e) {
       console.warn(`[RM] apply: cell ${plan.cellAddr} 失败`, e);
     }
