@@ -6,11 +6,18 @@
  *   - ensureEnabled:      add-in 启动时自动恢复上次 enabled 状态
  *   - clearAll:           任务窗格"全 sheet 清高亮"按钮
  */
+/* global console */
 
 import { controller } from "./controller";
 
 export async function toggleReadingMode(): Promise<void> {
-  await controller.toggle();
+  console.log("=== RM DIAG: toggleReadingMode called ===");
+  try {
+    await controller.toggle();
+    console.log("=== RM DIAG: toggleReadingMode OK ===");
+  } catch (e) {
+    console.error("=== RM DIAG: toggleReadingMode FAILED ===", e);
+  }
 }
 
 export async function ensureEnabled(): Promise<void> {

@@ -91,6 +91,10 @@ describe("computeHighlightPlan", () => {
 // ─────────────── applyHighlight(Excel.js 交互) ───────────────
 // 关键防呆:color 必须带 # 前缀 + pattern 必须设 Solid。
 // 不带 # 或 pattern=None,某些 Excel.js 版本会 set 成功但 Excel 渲染时丢弃。
+//
+// applyHighlight 现在是 async:每个 fill set 后立刻 await context.sync()
+// (借鉴 welcome 项目 — Mac Excel 上一次 sync 多个 fill 会 silent drop)。
+// 所以测试里要把 ctx 换成带 sync mock 的对象,并 await applyHighlight。
 
 describe("applyHighlight", () => {
   // 每个 range 的 format.fill 对象带 setter,记录 set 的值
@@ -127,9 +131,21 @@ describe("applyHighlight", () => {
     };
   }
 
-  it("1×1 plan: 三个 range 的 color 都带 # 前缀 + pattern=Solid", () => {
+  // 计数 sync 调用次数 + 返回 Promise(per-fill sync 必须落地的证据)
+  function makeContextMock() {
+    const ctx = {
+      _syncCalls: 0,
+      sync: () => {
+        ctx._syncCalls++;
+        return Promise.resolve();
+      },
+    };
+    return ctx;
+  }
+
+  it("1×1 plan: 三个 range 的 color 都带 # 前缀 + pattern=Solid + 三次 sync", async () => {
     const sheet = makeSheetMock();
-    const ctx = {} as Excel.RequestContext;
+    const ctx = makeContextMock();
     const plan: HighlightPlan = {
       sheetName: "Sheet1",
       cellAddr: "K30",
@@ -141,8 +157,17 @@ describe("applyHighlight", () => {
       enabled: true,
       crossColor: "ff9300",
       cellColor: "5a1c00",
+      borderColor: "0078D4",
+      headerColor: "E8F5E9",
+      showBorder: false,
+      borderStyle: "Continuous" as Excel.BorderLineStyle,
     };
-    applyHighlight(ctx, sheet as unknown as Excel.Worksheet, plan, state);
+    await applyHighlight(
+      ctx as unknown as Excel.RequestContext,
+      sheet as unknown as Excel.Worksheet,
+      plan,
+      state
+    );
 
     // row 用 crossColor,带 # 前缀
     expect(sheet._ranges.get("A30:AE30")!._rec.color).toBe("#ff9300");
@@ -153,40 +178,70 @@ describe("applyHighlight", () => {
     // cell 用 cellColor,带 # 前缀
     expect(sheet._ranges.get("K30")!._rec.color).toBe("#5a1c00");
     expect(sheet._ranges.get("K30")!._rec.pattern).toBe("Solid");
+    // ★per-fill sync:每个 fill 都 sync 一次(3 个 fill = 3 次 sync)
+    expect(ctx._syncCalls).toBe(3);
   });
 
-  it("整行 plan(只有 rowAddr): 只涂行,不涂 cell/col", () => {
+  it("整行 plan(只有 rowAddr): 只涂行 + sync 一次", async () => {
     const sheet = makeSheetMock();
-    const ctx = {} as Excel.RequestContext;
+    const ctx = makeContextMock();
     const plan: HighlightPlan = {
       sheetName: "Sheet1",
       rowAddr: "A5:AE5",
       isMultiCell: false,
     };
-    const state: ReadingModeState = { enabled: true, crossColor: "E3F2FD", cellColor: "FFF3B0" };
-    applyHighlight(ctx, sheet as unknown as Excel.Worksheet, plan, state);
+    const state: ReadingModeState = {
+      enabled: true,
+      crossColor: "E3F2FD",
+      cellColor: "FFF3B0",
+      borderColor: "0078D4",
+      headerColor: "E8F5E9",
+      showBorder: false,
+      borderStyle: "Continuous" as Excel.BorderLineStyle,
+    };
+    await applyHighlight(
+      ctx as unknown as Excel.RequestContext,
+      sheet as unknown as Excel.Worksheet,
+      plan,
+      state
+    );
 
     expect(sheet._ranges.size).toBe(1);
     expect(sheet._ranges.get("A5:AE5")!._rec.color).toBe("#E3F2FD");
     expect(sheet._ranges.get("A5:AE5")!._rec.pattern).toBe("Solid");
+    expect(ctx._syncCalls).toBe(1);
   });
 
-  it("多选 plan(isMultiCell=true): 啥都不涂", () => {
+  it("多选 plan(isMultiCell=true): 啥都不涂 + 0 sync", async () => {
     const sheet = makeSheetMock();
-    const ctx = {} as Excel.RequestContext;
+    const ctx = makeContextMock();
     const plan: HighlightPlan = { sheetName: "Sheet1", isMultiCell: true };
-    const state: ReadingModeState = { enabled: true, crossColor: "ff9300", cellColor: "5a1c00" };
-    applyHighlight(ctx, sheet as unknown as Excel.Worksheet, plan, state);
+    const state: ReadingModeState = {
+      enabled: true,
+      crossColor: "ff9300",
+      cellColor: "5a1c00",
+      borderColor: "0078D4",
+      headerColor: "E8F5E9",
+      showBorder: false,
+      borderStyle: "Continuous" as Excel.BorderLineStyle,
+    };
+    await applyHighlight(
+      ctx as unknown as Excel.RequestContext,
+      sheet as unknown as Excel.Worksheet,
+      plan,
+      state
+    );
 
-    // 没有任何 range 被访问
+    // 没有任何 range 被访问,也没有 sync(直接 return)
     expect(sheet._ranges.size).toBe(0);
+    expect(ctx._syncCalls).toBe(0);
   });
 
-  it("state 已经带 # 时(异常输入): 不会叠成 ##", () => {
+  it("state 已经带 # 时(异常输入): 不会叠成 ##", async () => {
     // stripHash 应该在 loadState 时去掉 #,但万一调用方传了带 # 的,
     // 不能给 Excel.js 喂 ##ff9300
     const sheet = makeSheetMock();
-    const ctx = {} as Excel.RequestContext;
+    const ctx = makeContextMock();
     const plan: HighlightPlan = {
       sheetName: "Sheet1",
       cellAddr: "A1",
@@ -194,14 +249,27 @@ describe("applyHighlight", () => {
       colAddr: "A1:A70",
       isMultiCell: false,
     };
-    const state: ReadingModeState = { enabled: true, crossColor: "#ff9300", cellColor: "#5a1c00" };
-    applyHighlight(ctx, sheet as unknown as Excel.Worksheet, plan, state);
+    const state: ReadingModeState = {
+      enabled: true,
+      crossColor: "#ff9300",
+      cellColor: "#5a1c00",
+      borderColor: "0078D4",
+      headerColor: "E8F5E9",
+      showBorder: false,
+      borderStyle: "Continuous" as Excel.BorderLineStyle,
+    };
+    await applyHighlight(
+      ctx as unknown as Excel.RequestContext,
+      sheet as unknown as Excel.Worksheet,
+      plan,
+      state
+    );
 
     // A1 是 cell,用 cellColor=#5a1c00(不是 crossColor)。要验证的是没有叠成 ##。
     expect(sheet._ranges.get("A1")!._rec.color).toBe("#5a1c00");
     expect(sheet._ranges.get("A1:F1")!._rec.color).toBe("#ff9300");
     // 关键:任何 range 都不应该出现 ##
-    for (const r of sheet._ranges.values()) {
+    for (const r of Array.from(sheet._ranges.values())) {
       expect(r._rec.color).not.toContain("##");
     }
   });

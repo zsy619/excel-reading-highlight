@@ -15,7 +15,11 @@
 
 import {
   applyHighlight,
+  applyBorders,
+  applyHeaderFill,
   clearHighlights,
+  clearBorders,
+  clearHeaderFill,
   clearAllAcrossSheets,
   loadState,
   saveState,
@@ -105,11 +109,13 @@ class ReadingModeController {
 
   /** 切换 enabled 状态 */
   async toggle(): Promise<void> {
+    console.log("=== RM DIAG: controller.toggle() enabled=" + this._state.enabled + " ===");
     if (this._state.enabled) {
       await this._disable();
     } else {
       await this._enable();
     }
+    console.log("=== RM DIAG: controller.toggle() done ===");
   }
 
   /** 幂等启用:仅在已 enabled 时重新涂当前选区,不切换状态 */
@@ -150,24 +156,37 @@ class ReadingModeController {
 
   /** 读当前选区,计算 plan,涂上 — 不读不写状态 */
   async applyCurrentSelection(): Promise<void> {
+    console.log("=== RM DIAG: applyCurrentSelection called ===");
     // 总是从 localStorage 重新读 _state。原因:
     //   1. 同窗口 storage 事件不 fire(MDN 规范),所以 taskpane 写完 localStorage
     //      后,同 context 的 controller 内存 _state 不会自动同步
     //   2. cross-context 命令链路 (commands.html controller) 在 storage 事件里
     //      已经 reload 过,这里再 reload 一次是冗余但安全
     this._state = loadState();
-    if (!this._state.enabled) return;
+    console.log(
+      "=== RM DIAG: applyCurrentSelection: loaded state enabled=" + this._state.enabled + " ==="
+    );
+    if (!this._state.enabled) {
+      console.log("=== RM DIAG: applyCurrentSelection: not enabled, skip ===");
+      return;
+    }
     // 顺带注册 selection handler — taskpane 单开路径(this method 被直接调)
     // 不会经过 _enable() / storage 事件,handler 必须在这里挂上,
     // 否则后续点其他格 DocumentSelectionChanged 没人接,高亮不跟随
     this._registerHandler();
+    console.log("=== RM DIAG: applyCurrentSelection: calling _doHighlight ===");
     await this._doHighlight();
+    console.log("=== RM DIAG: applyCurrentSelection: done ===");
   }
 
   // ─────────────── 内部 ───────────────
 
   private async _enable(): Promise<void> {
-    if (this._state.enabled) return;
+    if (this._state.enabled) {
+      console.log("=== RM DIAG: _enable: already enabled, skip ===");
+      return;
+    }
+    console.log("=== RM DIAG: _enable: starting ===");
     this._state.enabled = true;
     saveState(this._state);
     void this._updateRibbonLabel(true);
@@ -182,8 +201,9 @@ class ReadingModeController {
     } catch (e) {
       console.warn("[RM] enable: 读 sheetName 失败", e);
     }
+    console.log("=== RM DIAG: _enable: calling applyCurrentSelection ===");
     await this.applyCurrentSelection();
-    console.log(`[RM] controller: enabled`);
+    console.log(`=== RM DIAG: _enable: completed === enabled=${this._state.enabled}`);
   }
 
   private async _disable(): Promise<void> {
@@ -241,86 +261,69 @@ class ReadingModeController {
   }
 
   /**
-   * 核心:phase1 读 sheetName → sheet 切换则清旧视觉 + 恢复新 sheet 存储;
-   *       phase2 读选区 → 算 plan → 涂新。
+   * 核心:单 Excel.run 内原子完成 —
+   *   读 sheetName + 读选区 + 读 usedRange + 兜底 clear + 算 plan + 涂新。
+   *
+   * 设计借鉴 welcome 项目(`applyDirectHighlightInContext` 的"一切在一个 run 里"模式):
+   *   1. 把 phase1(读 sheetName)和 phase2(读选区+涂)合并成**一个** Excel.run,
+   *      消除 phase1↔phase2 之间的 sync gap(原来跨两个 run,Mac Excel 上
+   *      可能在 gap 内把 selection 改了,导致 phase2 涂到错的 cell)
+   *   2. paint 前对整个 usedRange 做一次兜底 fill.clear()(welcome v8.2 经验):
+   *      - 杜绝上次涂色的残留
+   *      - 防止 Excel 内置表格样式 / 用户手动底色 shadow 新色,导致"调了但没涂上"
+   *   3. paint 用 async applyHighlight(per-fill sync,见 ReadingModeCore.ts),
+   *      每个 fill set 后立刻 sync,Mac Excel 不会 silent drop
+   *
+   * sheet 切换的旧 sheet 清视觉 移到 run 之后(避免 run 内嵌套 run),
+   * 不影响主流程 — 用户感知不到这 ~10ms 延迟。
    *
    * 跨 sheet 时不删 lastHighlights 里的旧 sheet 条目;进入已有存储的 sheet 时直接恢复,
    * 不被当前选区覆盖。
    */
   private async _doHighlight(): Promise<void> {
-    // ── Phase 1: 读 sheetName + 处理 sheet 切换 ─────
+    console.log("=== RM DIAG: _doHighlight ENTER ===");
     let sheetName = "";
+    let sheetChanged = false;
+    let oldSheet = "";
+    let plan: HighlightPlan | null = null;
+
     try {
+      console.log("=== RM DIAG: _doHighlight: before Excel.run ===");
       await Excel.run(async (context) => {
-        const ws = context.workbook.worksheets.getActiveWorksheet();
-        ws.load("name");
+        console.log("=== RM DIAG: _doHighlight: INSIDE Excel.run ===");
+        // getSelectedRange() 永远落在 active sheet,直接拿 active worksheet
+        const sheet = context.workbook.worksheets.getActiveWorksheet();
+        const range = context.workbook.getSelectedRange();
+        sheet.load("name");
+        range.load(["rowIndex", "columnIndex", "rowCount", "columnCount"]);
         await context.sync();
-        sheetName = ws.name;
-      });
-    } catch (e) {
-      console.error("[RM] _doHighlight: phase1 读 sheetName 失败", e);
-      return;
-    }
+        console.log("=== RM DIAG: _doHighlight: after context.sync() sheet=" + sheet.name + " ===");
 
-    const sheetChanged = sheetName !== this._lastSheetName;
+        sheetName = sheet.name;
+        sheetChanged = sheetName !== this._lastSheetName;
+        oldSheet = this._lastSheetName;
+        this._lastSheetName = sheetName;
 
-    if (sheetChanged) {
-      const oldSheet = this._lastSheetName;
-      this._lastSheetName = sheetName;
-      console.log(`[RM] _doHighlight: 切到 ${sheetName}${oldSheet ? ` (旧 ${oldSheet})` : ""}`);
-
-      // 清旧 sheet 视觉,保留存储
-      if (oldSheet) {
-        const oldHls = this._lastHighlights.filter((h) => h.sheetName === oldSheet);
-        if (oldHls.length > 0) {
-          try {
-            await Excel.run(async (context) => {
-              const sheet = context.workbook.worksheets.getItem(oldSheet);
-              await clearHighlights(context, sheet, oldHls);
-            });
-            console.log(`[RM] _doHighlight: 已清 ${oldSheet} 视觉,存储保留`);
-          } catch (e) {
-            console.error(`[RM] _doHighlight: clear ${oldSheet} 视觉失败`, e);
-          }
-        }
-      }
-
-      // 新 sheet 有存储 → 恢复,不让当前选区覆盖
-      const stored = this._lastHighlights.find((h) => h.sheetName === sheetName);
-      if (stored) {
-        try {
-          await Excel.run(async (context) => {
-            const sheet = context.workbook.worksheets.getItem(sheetName);
-            const plan: HighlightPlan = {
+        // 新 sheet 有存储 → 恢复,不让当前选区覆盖
+        if (sheetChanged) {
+          const stored = this._lastHighlights.find((h) => h.sheetName === sheetName);
+          if (stored) {
+            plan = {
               sheetName,
               cellAddr: stored.cellAddr,
               rowAddr: stored.rowAddr,
               colAddr: stored.colAddr,
               isMultiCell: false,
             };
-            applyHighlight(context, sheet, plan, this._state);
-            await context.sync();
+            console.log("=== RM DIAG: _doHighlight: about to restore stored highlight ===");
+            await applyHighlight(context, sheet, plan, this._state);
             console.log(
               `[RM] _doHighlight: 恢复 ${sheetName} 存储 → ${stored.cellAddr ?? stored.rowAddr ?? stored.colAddr}`
             );
-          });
-        } catch (e) {
-          console.error(`[RM] _doHighlight: 恢复 ${sheetName} 存储失败`, e);
+            console.log("=== RM DIAG: _doHighlight: restored, returning ===");
+            return;
+          }
         }
-        return;
-      }
-    }
-
-    // ── Phase 2: 读选区 + 算 plan + 涂新 ──────────────
-    try {
-      await Excel.run(async (context) => {
-        // getSelectedRange() 永远落在 active sheet,直接拿 active worksheet
-        // 避免 range.load("worksheet") 触发 no-navigational-load 警告
-        const sheet = context.workbook.worksheets.getActiveWorksheet();
-        const range = sheet.getSelectedRange();
-        sheet.load("name");
-        range.load(["rowIndex", "columnIndex", "rowCount", "columnCount"]);
-        await context.sync();
 
         // computeHighlightPlan 自己处理 1×N / N×1;只跳过 M×N 真多选
         if (range.rowCount > 1 && range.columnCount > 1) {
@@ -344,7 +347,22 @@ class ReadingModeController {
           console.warn("[RM] _doHighlight: usedRange 读失败,用默认", e);
         }
 
-        const plan = computeHighlightPlan(
+        // 精准清除:只清本插件在当前 sheet 涂过的格,不碰用户手动底色
+        const oldHlForThisSheet = this._lastHighlights.filter((h) => h.sheetName === sheetName);
+        if (oldHlForThisSheet.length > 0) {
+          try {
+            await clearHighlights(context, sheet, oldHlForThisSheet);
+            await clearBorders(context, sheet, oldHlForThisSheet);
+            await clearHeaderFill(context, sheet, oldHlForThisSheet);
+            console.log(
+              `[RM] _doHighlight: 精准清除 ${sheetName} 旧高亮 ${oldHlForThisSheet.length} 条`
+            );
+          } catch (e) {
+            console.warn("[RM] _doHighlight: 精准清除旧高亮失败:", e);
+          }
+        }
+
+        plan = computeHighlightPlan(
           range.rowIndex,
           range.columnIndex,
           range.rowCount,
@@ -353,8 +371,13 @@ class ReadingModeController {
           totalRows,
           totalCols
         );
-        applyHighlight(context, sheet, plan, this._state);
-        await context.sync();
+        console.log(
+          `=== RM DIAG: _doHighlight: about to paint plan row=${plan.rowAddr} col=${plan.colAddr} cell=${plan.cellAddr} ===`
+        );
+        await applyHighlight(context, sheet, plan, this._state);
+        console.log("=== RM DIAG: _doHighlight: applyHighlight done, now borders ===");
+        await applyBorders(context, sheet, plan, this._state);
+        await applyHeaderFill(context, sheet, plan, this._state);
 
         if (!plan.isMultiCell) {
           const newHl = planToLastHighlight(plan);
@@ -369,7 +392,26 @@ class ReadingModeController {
         }
       });
     } catch (e) {
-      console.error("[RM] _doHighlight: phase2 apply 失败", e);
+      console.error("=== RM DIAG: _doHighlight FAILED ===", e);
+      return;
+    }
+
+    // run 之后再清旧 sheet 视觉(避免 run 内嵌 run)
+    if (sheetChanged && oldSheet) {
+      const oldHls = this._lastHighlights.filter((h) => h.sheetName === oldSheet);
+      if (oldHls.length > 0) {
+        try {
+          await Excel.run(async (context) => {
+            const sheet = context.workbook.worksheets.getItem(oldSheet);
+            await clearHighlights(context, sheet, oldHls);
+            await clearBorders(context, sheet, oldHls);
+            await clearHeaderFill(context, sheet, oldHls);
+          });
+          console.log(`[RM] _doHighlight: 已清 ${oldSheet} 视觉+边框+表头,存储保留`);
+        } catch (e) {
+          console.error(`[RM] _doHighlight: clear ${oldSheet} 视觉失败`, e);
+        }
+      }
     }
   }
 

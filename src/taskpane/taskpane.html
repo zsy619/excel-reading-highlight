@@ -29,9 +29,9 @@
             </div>
         </div>
 
-        <!-- 颜色选择区域 -->
+        <!-- 填充颜色区域 -->
         <div class="settings-section">
-            <h3 class="ms-font-s section-title">颜色设置</h3>
+            <h3 class="ms-font-s section-title">填充颜色</h3>
 
             <div class="color-row">
                 <label class="ms-font-s color-label" for="row-color">行/列高亮颜色</label>
@@ -47,6 +47,45 @@
                     <input type="color" id="column-color" class="color-picker" value="#FFF3B0" />
                     <span class="color-hex" id="column-color-hex">#FFF3B0</span>
                 </div>
+            </div>
+        </div>
+
+        <!-- 边框 + 表头区域 -->
+        <div class="settings-section">
+            <h3 class="ms-font-s section-title">边框 &amp; 表头</h3>
+
+            <div class="toggle-row">
+                <label class="ms-font-s toggle-label" for="toggle-border">显示边框</label>
+                <div class="toggle-switch toggle-sm" id="toggle-border" role="switch" aria-checked="true" tabindex="0">
+                    <div class="toggle-thumb"></div>
+                </div>
+            </div>
+
+            <div class="color-row">
+                <label class="ms-font-s color-label" for="border-color">边框颜色</label>
+                <div class="color-picker-wrapper">
+                    <input type="color" id="border-color" class="color-picker" value="#0078D4" />
+                    <span class="color-hex" id="border-color-hex">#0078D4</span>
+                </div>
+            </div>
+
+            <div class="color-row">
+                <label class="ms-font-s color-label" for="header-color">表头填充颜色</label>
+                <div class="color-picker-wrapper">
+                    <input type="color" id="header-color" class="color-picker" value="#E8F5E9" />
+                    <span class="color-hex" id="header-color-hex">#E8F5E9</span>
+                </div>
+            </div>
+
+            <div class="select-row">
+                <label class="ms-font-s color-label" for="border-style">边框样式</label>
+                <select id="border-style" class="style-select">
+                    <option value="Continuous">实线</option>
+                    <option value="Dash">虚线</option>
+                    <option value="Dot">点线</option>
+                    <option value="DashDot">短划线-点</option>
+                    <option value="DashDotDot">短划线-点-点</option>
+                </select>
             </div>
         </div>
 

@@ -22,7 +22,7 @@
  *     controller 单测只关心**状态机是否正确切换**。
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 
 // ─────────────── shared mock state (hoisted) ───────────────
 
@@ -131,8 +131,14 @@ vi.spyOn(console, "warn").mockImplementation(() => {});
 vi.spyOn(console, "error").mockImplementation(() => {});
 
 // ─────────────── import controller AFTER mocks ───────────────
+// 不能用静态 import — import 在 stubGlobal 之前执行,window 未定义会抛 ReferenceError。
+// 所以用 beforeAll 延迟动态 import,确保所有 mock/stub 先落地。
 
-const { controller } = await import("./controller");
+let controller: any;
+
+beforeAll(async () => {
+  controller = (await import("./controller")).controller;
+});
 
 // ─────────────── helpers ───────────────
 

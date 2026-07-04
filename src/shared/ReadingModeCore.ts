@@ -20,6 +20,14 @@ export interface ReadingModeState {
   enabled: boolean;
   crossColor: string;
   cellColor: string;
+  /** 边框颜色(当 showBorder=true 时生效) */
+  borderColor: string;
+  /** 表头高亮颜色(A 列 + 第 1 行的单元格) */
+  headerColor: string;
+  /** 是否在行/列交叉区域显示边框 */
+  showBorder: boolean;
+  /** 边框样式 */
+  borderStyle: Excel.BorderLineStyle;
 }
 
 export interface LastHighlight {
@@ -27,6 +35,10 @@ export interface LastHighlight {
   rowAddr?: string;
   colAddr?: string;
   cellAddr?: string;
+  /** A 列行表头单元格地址(如 "A5") — 单独用 headerColor 填充 */
+  headerRowAddr?: string;
+  /** 第 1 行列表头单元格地址(如 "C1") — 单独用 headerColor 填充 */
+  headerColAddr?: string;
 }
 
 /** 不带 Excel 上下文也能算出来的"涂色计划" */
@@ -40,8 +52,12 @@ export interface HighlightPlan {
 
 export const DEFAULT_STATE: ReadingModeState = {
   enabled: false,
-  crossColor: "E3F2FD",
-  cellColor: "FFF3B0",
+  crossColor: "#FFC000",
+  cellColor: "#FFE08A",
+  borderColor: "#4472C4",
+  headerColor: "#D9E2F3",
+  showBorder: false,
+  borderStyle: "Continuous" as Excel.BorderLineStyle,
 };
 
 const STORAGE_KEY = "readingMode.state";
@@ -58,6 +74,10 @@ export function loadState(): ReadingModeState {
       enabled: !!parsed.enabled,
       crossColor: stripHash(parsed.crossColor ?? DEFAULT_STATE.crossColor),
       cellColor: stripHash(parsed.cellColor ?? DEFAULT_STATE.cellColor),
+      borderColor: stripHash(parsed.borderColor ?? DEFAULT_STATE.borderColor),
+      headerColor: stripHash(parsed.headerColor ?? DEFAULT_STATE.headerColor),
+      showBorder: parsed.showBorder ?? DEFAULT_STATE.showBorder,
+      borderStyle: parsed.borderStyle ?? DEFAULT_STATE.borderStyle,
     };
   } catch (e) {
     console.warn("ReadingModeCore.loadState 失败,用默认:", e);
@@ -148,6 +168,8 @@ export function planToLastHighlight(plan: HighlightPlan): LastHighlight {
     rowAddr: plan.rowAddr,
     colAddr: plan.colAddr,
     cellAddr: plan.cellAddr,
+    headerRowAddr: plan.rowAddr ? `A${plan.rowAddr.match(/\d+/)?.[0] ?? ""}` : undefined,
+    headerColAddr: plan.colAddr ? `${plan.colAddr.match(/^[A-Z]+/)?.[0] ?? ""}1` : undefined,
   };
 }
 
@@ -193,13 +215,18 @@ export async function clearHighlights(
  *
  * **Fill pattern**:只 set color 不设 pattern,某些版本 pattern 留在 None,
  * color 被忽略。一并设 Solid,Excel 才会真的渲染填色。
+ *
+ * **Per-fill sync**:每个 range set 完立刻 await context.sync()(借鉴 welcome
+ * 项目的经验,welcome 注释:Mac Excel 上 "set 多个 fill 后只 sync 一次"
+ * 会导致前面的 set 被 silent drop,只有最后一个被 commit)。
+ * 单 fill 同步 = 每个 fill 单独落地,即使 Mac 丢一个,另两个还在。
  */
-export function applyHighlight(
+export async function applyHighlight(
   context: Excel.RequestContext,
   sheet: Excel.Worksheet,
   plan: HighlightPlan,
   state: ReadingModeState
-): void {
+): Promise<void> {
   if (plan.isMultiCell) {
     console.log(`[RM] apply: 多选/合并,跳过涂`);
     return;
@@ -216,8 +243,9 @@ export function applyHighlight(
   if (plan.rowAddr) {
     try {
       const range = sheet.getRange(plan.rowAddr);
-      range.format.fill.color = crossColorHex;
       range.format.fill.pattern = "Solid";
+      range.format.fill.color = crossColorHex;
+      await context.sync(); // ★ per-fill sync:Mac Excel 不会 silent drop
     } catch (e) {
       console.warn(`[RM] apply: row ${plan.rowAddr} 失败`, e);
     }
@@ -225,8 +253,9 @@ export function applyHighlight(
   if (plan.colAddr) {
     try {
       const range = sheet.getRange(plan.colAddr);
-      range.format.fill.color = crossColorHex;
       range.format.fill.pattern = "Solid";
+      range.format.fill.color = crossColorHex;
+      await context.sync();
     } catch (e) {
       console.warn(`[RM] apply: col ${plan.colAddr} 失败`, e);
     }
@@ -234,8 +263,9 @@ export function applyHighlight(
   if (plan.cellAddr) {
     try {
       const range = sheet.getRange(plan.cellAddr);
-      range.format.fill.color = cellColorHex;
       range.format.fill.pattern = "Solid";
+      range.format.fill.color = cellColorHex;
+      await context.sync();
     } catch (e) {
       console.warn(`[RM] apply: cell ${plan.cellAddr} 失败`, e);
     }
@@ -244,6 +274,7 @@ export function applyHighlight(
 
 /**
  * 全表清高亮(关闭时用):每个 sheet 单独一个 Excel.run,互不干扰。
+ * 同时清除 fills、borders 和 header fills。
  */
 export async function clearAllAcrossSheets(hls: LastHighlight[]): Promise<void> {
   if (hls.length === 0) return;
@@ -262,6 +293,8 @@ export async function clearAllAcrossSheets(hls: LastHighlight[]): Promise<void> 
         try {
           const sheet = context.workbook.worksheets.getItem(sheetName);
           await clearHighlights(context, sheet, groupHls);
+          await clearBorders(context, sheet, groupHls);
+          await clearHeaderFill(context, sheet, groupHls);
           console.log(`[RM] clearAll: ${sheetName} done`);
         } catch (e) {
           console.warn(`[RM] clearAll: 切到 ${sheetName} 失败(可能已删除)`, e);
@@ -272,6 +305,155 @@ export async function clearAllAcrossSheets(hls: LastHighlight[]): Promise<void> 
     );
   });
   await Promise.all(tasks);
+}
+
+/**
+ * 给行/列范围加边框(十字交叉的边框效果)。
+ * 行加 top+bottom 边框;列加 left+right 边框。
+ */
+export async function applyBorders(
+  context: Excel.RequestContext,
+  sheet: Excel.Worksheet,
+  plan: HighlightPlan,
+  state: ReadingModeState
+): Promise<void> {
+  if (plan.isMultiCell || !state.showBorder) return;
+  const borderColor = state.borderColor.startsWith("#")
+    ? state.borderColor
+    : "#" + state.borderColor;
+  const style: Excel.BorderLineStyle = state.borderStyle;
+
+  if (plan.rowAddr) {
+    try {
+      const rng = sheet.getRange(plan.rowAddr);
+      // 清除旧边框再设新边框,避免叠加
+      rng.format.borders.getItem("EdgeTop").color = borderColor;
+      rng.format.borders.getItem("EdgeTop").style = style;
+      rng.format.borders.getItem("EdgeBottom").color = borderColor;
+      rng.format.borders.getItem("EdgeBottom").style = style;
+      await context.sync();
+    } catch (e) {
+      console.warn(`[RM] borders: row ${plan.rowAddr} 失败`, e);
+    }
+  }
+  if (plan.colAddr) {
+    try {
+      const rng = sheet.getRange(plan.colAddr);
+      rng.format.borders.getItem("EdgeLeft").color = borderColor;
+      rng.format.borders.getItem("EdgeLeft").style = style;
+      rng.format.borders.getItem("EdgeRight").color = borderColor;
+      rng.format.borders.getItem("EdgeRight").style = style;
+      await context.sync();
+    } catch (e) {
+      console.warn(`[RM] borders: col ${plan.colAddr} 失败`, e);
+    }
+  }
+}
+
+/**
+ * 清除指定记录上的边框。
+ */
+export async function clearBorders(
+  context: Excel.RequestContext,
+  sheet: Excel.Worksheet,
+  hls: LastHighlight[]
+): Promise<void> {
+  if (hls.length === 0) return;
+  for (const hl of hls) {
+    if (hl.rowAddr) {
+      try {
+        const rng = sheet.getRange(hl.rowAddr);
+        rng.format.borders.getItem("EdgeTop").style = "None";
+        rng.format.borders.getItem("EdgeBottom").style = "None";
+      } catch (e) {
+        console.warn(`[RM] clearBorders: row ${hl.rowAddr} 失败`, e);
+      }
+    }
+    if (hl.colAddr) {
+      try {
+        const rng = sheet.getRange(hl.colAddr);
+        rng.format.borders.getItem("EdgeLeft").style = "None";
+        rng.format.borders.getItem("EdgeRight").style = "None";
+      } catch (e) {
+        console.warn(`[RM] clearBorders: col ${hl.colAddr} 失败`, e);
+      }
+    }
+  }
+  await context.sync();
+}
+
+/**
+ * 给表头单元格(A 列行表头 + 第 1 行列表头)施加 headerColor 填充。
+ * headerRow = 行表头(如 A5),headerCol = 列表头(如 C1)。
+ * 如果该单元格已在 crossColor 覆盖范围内,headerColor 覆盖上去。
+ */
+export async function applyHeaderFill(
+  context: Excel.RequestContext,
+  sheet: Excel.Worksheet,
+  plan: HighlightPlan,
+  state: ReadingModeState
+): Promise<void> {
+  if (plan.isMultiCell) return;
+  const headerColorHex = state.headerColor.startsWith("#")
+    ? state.headerColor
+    : "#" + state.headerColor;
+
+  // 行表头: A{rowNum} — 从 rowAddr 中提取行号
+  if (plan.rowAddr) {
+    const rowNum = plan.rowAddr.match(/\d+/)?.[0];
+    if (rowNum) {
+      try {
+        const range = sheet.getRange(`A${rowNum}`);
+        range.format.fill.pattern = "Solid";
+        range.format.fill.color = headerColorHex;
+        await context.sync();
+      } catch (e) {
+        console.warn(`[RM] headerFill: row A${rowNum} 失败`, e);
+      }
+    }
+  }
+  // 列表头: {colLetter}1 — 从 colAddr 中提取列字母
+  if (plan.colAddr) {
+    const colLetter = plan.colAddr.match(/^[A-Z]+/)?.[0];
+    if (colLetter) {
+      try {
+        const range = sheet.getRange(`${colLetter}1`);
+        range.format.fill.pattern = "Solid";
+        range.format.fill.color = headerColorHex;
+        await context.sync();
+      } catch (e) {
+        console.warn(`[RM] headerFill: col ${colLetter}1 失败`, e);
+      }
+    }
+  }
+}
+
+/**
+ * 清除表头单元格的 headerColor 填充。
+ */
+export async function clearHeaderFill(
+  context: Excel.RequestContext,
+  sheet: Excel.Worksheet,
+  hls: LastHighlight[]
+): Promise<void> {
+  if (hls.length === 0) return;
+  for (const hl of hls) {
+    if (hl.headerRowAddr) {
+      try {
+        sheet.getRange(hl.headerRowAddr).format.fill.clear();
+      } catch (e) {
+        console.warn(`[RM] clearHeaderFill: ${hl.headerRowAddr} 失败`, e);
+      }
+    }
+    if (hl.headerColAddr) {
+      try {
+        sheet.getRange(hl.headerColAddr).format.fill.clear();
+      } catch (e) {
+        console.warn(`[RM] clearHeaderFill: ${hl.headerColAddr} 失败`, e);
+      }
+    }
+  }
+  await context.sync();
 }
 
 // ───────────────────── helpers ─────────────────────

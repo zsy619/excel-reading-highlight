@@ -14,6 +14,7 @@
  * 之前用户只开 taskpane 时,commands.html 永远不加载,controller 不存在,
  * 任何 toggle/换色都不生效。
  */
+/* global Excel HTMLSelectElement */
 
 import { loadState, ReadingModeState, saveState } from "../shared/ReadingModeCore";
 import { controller } from "../commands/controller";
@@ -30,10 +31,22 @@ let columnColorHex: HTMLElement;
 let toggleSwitch: HTMLElement;
 let statusText: HTMLElement;
 
+// border/header controls
+let borderToggle: HTMLElement;
+let borderColorInput: HTMLInputElement;
+let headerColorInput: HTMLInputElement;
+let borderColorHex: HTMLElement;
+let headerColorHex: HTMLElement;
+let borderStyleSelect: HTMLSelectElement;
+
 let currentState: ReadingModeState = {
   enabled: false,
   crossColor: "E3F2FD",
   cellColor: "FFF3B0",
+  borderColor: "0078D4",
+  headerColor: "E8F5E9",
+  showBorder: true,
+  borderStyle: "Continuous" as Excel.BorderLineStyle,
 };
 
 Office.onReady((info) => {
@@ -54,6 +67,12 @@ function initUI(): void {
   columnColorHex = document.getElementById("column-color-hex")!;
   toggleSwitch = document.getElementById("toggle-reading")!;
   statusText = document.getElementById("status-text")!;
+  borderToggle = document.getElementById("toggle-border")!;
+  borderColorInput = document.getElementById("border-color") as HTMLInputElement;
+  headerColorInput = document.getElementById("header-color") as HTMLInputElement;
+  borderColorHex = document.getElementById("border-color-hex")!;
+  headerColorHex = document.getElementById("header-color-hex")!;
+  borderStyleSelect = document.getElementById("border-style") as HTMLSelectElement;
   const clearAllBtn = document.getElementById("clear-all") as HTMLButtonElement | null;
 
   // 控件初值
@@ -61,6 +80,12 @@ function initUI(): void {
   rowColorHex.textContent = "#" + currentState.crossColor;
   columnColorInput.value = "#" + currentState.cellColor;
   columnColorHex.textContent = "#" + currentState.cellColor;
+  borderColorInput.value = "#" + currentState.borderColor;
+  borderColorHex.textContent = "#" + currentState.borderColor;
+  headerColorInput.value = "#" + currentState.headerColor;
+  headerColorHex.textContent = "#" + currentState.headerColor;
+  borderStyleSelect.value = currentState.borderStyle || "Continuous";
+  updateToggle(borderToggle, currentState.showBorder);
   updateUI(currentState.enabled);
   setStatusText(currentState.enabled ? "状态: 已激活" : "状态: 未激活");
 
@@ -79,7 +104,6 @@ function initUI(): void {
     rowColorHex.textContent = color;
     currentState.crossColor = stripHash(color);
     saveState(currentState);
-    // 直接调 controller 重涂(不依赖 storage 事件,同窗口不 fire)
     void controller.applyCurrentSelection();
   });
   columnColorInput.addEventListener("input", () => {
@@ -90,15 +114,48 @@ function initUI(): void {
     void controller.applyCurrentSelection();
   });
 
+  // 边框相关
+  borderToggle.addEventListener("click", () => {
+    const next = !currentState.showBorder;
+    currentState.showBorder = next;
+    saveState(currentState);
+    updateToggle(borderToggle, next);
+    void controller.applyCurrentSelection();
+  });
+  borderToggle.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      borderToggle.click();
+    }
+  });
+  borderColorInput.addEventListener("input", () => {
+    const color = borderColorInput.value;
+    borderColorHex.textContent = color;
+    currentState.borderColor = stripHash(color);
+    saveState(currentState);
+    void controller.applyCurrentSelection();
+  });
+  headerColorInput.addEventListener("input", () => {
+    const color = headerColorInput.value;
+    headerColorHex.textContent = color;
+    currentState.headerColor = stripHash(color);
+    saveState(currentState);
+    void controller.applyCurrentSelection();
+  });
+  borderStyleSelect.addEventListener("change", () => {
+    currentState.borderStyle = borderStyleSelect.value as Excel.BorderLineStyle;
+    saveState(currentState);
+    void controller.applyCurrentSelection();
+  });
+
   // 全 sheet 清高亮
   clearAllBtn?.addEventListener("click", () => {
-    invokeCommand("clearAll"); // 通知 commands.html controller(如果它已加载)
+    invokeCommand("clearAll");
     setStatusText("状态: 已清空所有高亮");
-    // taskpane context 自己也清(不依赖 storage 事件跨 context 传播)
     void controller.clearAll();
   });
 
-  // 跨 context 状态同步 — 控制器侧 enabled 变化时,UI 跟着变
+  // 跨 context 状态同步
   window.addEventListener("storage", (e) => {
     if (e.key !== "readingMode.state") return;
     currentState = loadState();
@@ -107,6 +164,12 @@ function initUI(): void {
     rowColorHex.textContent = "#" + currentState.crossColor;
     columnColorInput.value = "#" + currentState.cellColor;
     columnColorHex.textContent = "#" + currentState.cellColor;
+    borderColorInput.value = "#" + currentState.borderColor;
+    borderColorHex.textContent = "#" + currentState.borderColor;
+    headerColorInput.value = "#" + currentState.headerColor;
+    headerColorHex.textContent = "#" + currentState.headerColor;
+    borderStyleSelect.value = currentState.borderStyle || "Continuous";
+    updateToggle(borderToggle, currentState.showBorder);
     setStatusText(currentState.enabled ? "状态: 已激活" : "状态: 未激活");
   });
 }
@@ -127,6 +190,10 @@ async function onToggleClick(): Promise<void> {
 
 function updateUI(on: boolean): void {
   toggleSwitch.setAttribute("aria-checked", on ? "true" : "false");
+}
+
+function updateToggle(el: HTMLElement, on: boolean): void {
+  el.setAttribute("aria-checked", on ? "true" : "false");
 }
 
 function setStatusText(text: string): void {
