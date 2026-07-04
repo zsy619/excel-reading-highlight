@@ -1,15 +1,22 @@
 /*
- * taskpane.ts - 任务窗格 UI(只负责显示 + 把用户操作写回 localStorage)
+ * taskpane.ts - 任务窗格 UI(显示 + 把用户操作写回 localStorage + 直接调 controller)
  *
  * 单一事实源在 commands.html 的 controller.ts。这里通过:
  *   - localStorage 读状态、配色
  *   - storage 事件听控制器状态变化(用于跨 sheet 后状态同步,虽然 taskpane 通常不感知)
  *   - "readingMode.command" key 触发一次性命令(clearAll)
+ *   - **直接 import controller**(P5 修的 bug):
+ *     同窗口 storage 事件不 fire(MDN 规范),光靠 storage 事件不行 —
+ *     taskpane 改色 / 开关后必须显式调 controller.applyCurrentSelection,
+ *     否则 controller 内存 _state 不会同步,apply 也会用过期值
  *
- * 不再 import ReadingMode 类 - 控制器全权负责 Excel 操作。
+ * 引入 controller 同时也保证:**taskpane 单开** 不依赖 commands.html lazy load。
+ * 之前用户只开 taskpane 时,commands.html 永远不加载,controller 不存在,
+ * 任何 toggle/换色都不生效。
  */
 
 import { loadState, ReadingModeState, saveState } from "../shared/ReadingModeCore";
+import { controller } from "../commands/controller";
 
 /* global document Office window localStorage setTimeout URLSearchParams HTMLInputElement HTMLButtonElement HTMLElement */
 
@@ -71,19 +78,24 @@ function initUI(): void {
     const color = rowColorInput.value;
     rowColorHex.textContent = color;
     currentState.crossColor = stripHash(color);
-    saveState(currentState); // storage 事件触发 controller 重涂
+    saveState(currentState);
+    // 直接调 controller 重涂(不依赖 storage 事件,同窗口不 fire)
+    void controller.applyCurrentSelection();
   });
   columnColorInput.addEventListener("input", () => {
     const color = columnColorInput.value;
     columnColorHex.textContent = color;
     currentState.cellColor = stripHash(color);
     saveState(currentState);
+    void controller.applyCurrentSelection();
   });
 
   // 全 sheet 清高亮
   clearAllBtn?.addEventListener("click", () => {
-    invokeCommand("clearAll");
+    invokeCommand("clearAll"); // 通知 commands.html controller(如果它已加载)
     setStatusText("状态: 已清空所有高亮");
+    // taskpane context 自己也清(不依赖 storage 事件跨 context 传播)
+    void controller.clearAll();
   });
 
   // 跨 context 状态同步 — 控制器侧 enabled 变化时,UI 跟着变
@@ -102,9 +114,15 @@ function initUI(): void {
 async function onToggleClick(): Promise<void> {
   const next = !currentState.enabled;
   currentState.enabled = next;
-  saveState(currentState); // 控制器侧 storage listener 会调 toggle
+  saveState(currentState);
   updateUI(next);
   setStatusText(next ? "状态: 已激活" : "状态: 未激活");
+  // 直接调 controller:toggling on 涂当前选区,off 清所有高亮
+  if (next) {
+    void controller.applyCurrentSelection();
+  } else {
+    void controller.clearAll();
+  }
 }
 
 function updateUI(on: boolean): void {

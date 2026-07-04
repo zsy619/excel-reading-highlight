@@ -41,6 +41,7 @@ const h = vi.hoisted(() => {
       cellColor: string;
     }>,
     saveHighlightsCalls: 0,
+    excelRunCalls: 0, // P5 修后验证 applyCurrentSelection 进了 _doHighlight
   };
 });
 
@@ -119,7 +120,8 @@ vi.stubGlobal("Office", {
 });
 vi.stubGlobal("Excel", {
   run: async () => {
-    /* no-op */
+    // 计数,不再 no-op — 实际不执行 callback,但能验证有没有走到 _doHighlight
+    h.excelRunCalls++;
   },
 });
 
@@ -140,6 +142,7 @@ function clearCounters() {
   h.saveStateCalls = [];
   h.saveHighlightsCalls = 0;
   h.selectionListeners.length = 0;
+  h.excelRunCalls = 0;
 }
 
 function resetStorage() {
@@ -281,5 +284,47 @@ describe("ReadingModeController", () => {
 
     // disabled 时 short-circuit,既不调 applyCurrentSelection 也不写状态
     expect(h.saveStateCalls).toHaveLength(0);
+  });
+
+  // ── 6. P5 修:applyCurrentSelection 入口 reload _state(防 taskpane 单开 bug) ──
+  it("applyCurrentSelection: 重新从 localStorage 读 _state(防内存过期)", async () => {
+    // 1) 先让 controller 处于 enabled=true
+    await setControllerEnabled(true);
+    clearCounters();
+
+    // 2) 模拟"taskpane 写完 localStorage,但同窗口 storage 事件不 fire"的情况:
+    //    直接改 mock 里的 localStorage,把 enabled 翻成 false
+    h.storage["readingMode.state"] = JSON.stringify({
+      enabled: false,
+      crossColor: "ff9300",
+      cellColor: "5a1c00",
+    });
+
+    // 3) 调 applyCurrentSelection,如果不 reload 会用过期 _state.enabled=true
+    //    去 _doHighlight,reload 后应该 short-circuit
+    await controller.applyCurrentSelection();
+
+    // 没调 applyHighlight(因为 enabled=false → short-circuit)
+    expect(h.applyHighlightCalls).toBe(0);
+  });
+
+  it("applyCurrentSelection: reload 后 enabled=true 才走 _doHighlight", async () => {
+    // 1) 起点: controller _state.enabled=false
+    await setControllerEnabled(false);
+    clearCounters();
+
+    // 2) 直接改 localStorage 到 enabled=true(模拟 taskpane 改完没通知 controller)
+    h.storage["readingMode.state"] = JSON.stringify({
+      enabled: true,
+      crossColor: "ff9300",
+      cellColor: "5a1c00",
+    });
+
+    // 3) applyCurrentSelection reload 后 enabled=true,应该走 _doHighlight
+    //    (Excel.run mock 只计数不执行 callback,故这里用 excelRunCalls 验证)
+    await controller.applyCurrentSelection();
+
+    // 走了 _doHighlight(phase 1 + phase 2 共 2 次 Excel.run)
+    expect(h.excelRunCalls).toBeGreaterThan(0);
   });
 });

@@ -150,6 +150,12 @@ class ReadingModeController {
 
   /** 读当前选区,计算 plan,涂上 — 不读不写状态 */
   async applyCurrentSelection(): Promise<void> {
+    // 总是从 localStorage 重新读 _state。原因:
+    //   1. 同窗口 storage 事件不 fire(MDN 规范),所以 taskpane 写完 localStorage
+    //      后,同 context 的 controller 内存 _state 不会自动同步
+    //   2. cross-context 命令链路 (commands.html controller) 在 storage 事件里
+    //      已经 reload 过,这里再 reload 一次是冗余但安全
+    this._state = loadState();
     if (!this._state.enabled) return;
     await this._doHighlight();
   }
@@ -191,6 +197,9 @@ class ReadingModeController {
     Office.context.document.addHandlerAsync(
       Office.EventType.DocumentSelectionChanged,
       () => {
+        // 同 applyCurrentSelection:每次 fire 都重新读 _state,避免
+        // taskpane 改完 enabled 后内存 _state 还是旧值导致误判
+        this._state = loadState();
         if (!this._state.enabled) return;
         this._throttle(() => void this._doHighlight());
       },
