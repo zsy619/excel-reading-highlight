@@ -1718,6 +1718,9 @@ Office.onReady(function (info) {
     var autoToggle = urlParams.get("autoToggle") !== null;
     initUI();
     if (autoToggle) onToggleClick();
+    if (currentState.enabled) {
+      void _commands_controller__WEBPACK_IMPORTED_MODULE_1__.controller.applyCurrentSelection();
+    }
   }
 });
 function initUI() {
